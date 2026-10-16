@@ -17,13 +17,13 @@
 推荐从 [GitHub Releases](https://github.com/yu1745/dsh-extensions/releases) 安装预构建包：
 
 ```bash
-dsh plugin --profile web add 'https://github.com/yu1745/dsh-extensions/releases/download/v0.2.0-alpha.1/yu1745-dsh-extensions-0.2.0-alpha.1.tgz'
+dsh plugin --profile web add 'https://github.com/yu1745/dsh-extensions/releases/download/v0.2.0-alpha.2/yu1745-dsh-extensions-0.2.0-alpha.2.tgz'
 ```
 
 或安装固定版本的 GitHub 源码：
 
 ```bash
-dsh plugin --profile web add 'github:yu1745/dsh-extensions#v0.2.0-alpha.1'
+dsh plugin --profile web add 'github:yu1745/dsh-extensions#v0.2.0-alpha.2'
 ```
 
 源码安装需要运行 `prepare` 构建。若 pnpm 要求构建授权，在该 profile 的 `pnpm-workspace.yaml` 中合并：
@@ -33,7 +33,7 @@ allowBuilds:
   '@yu1745/dsh-extensions': true
 ```
 
-然后重新安装。`headless` profile 使用同一个包，将命令中的 `web` 改为 `headless`。Web 专用的三个预设 patch 在 headless 中会被跳过；`--dump-config` 可能显示对应的“entry not found”提示。包会启用 headless 的本地 credentials 服务，以便查询额度和使用已有 DSH 凭据。
+然后重新安装。`headless` profile 使用同一个包，将命令中的 `web` 改为 `headless`。Web 专用的三个预设 patch 在 headless 中会被跳过；`--dump-config` 可能显示对应的“entry not found”提示。包会启用 headless 的本地 credentials 和 authorization 服务，以便查询额度和使用已有 DSH 凭据。
 
 首次使用网页读取前，安装 Playwright 浏览器：
 

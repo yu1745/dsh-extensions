@@ -1,3 +1,6 @@
+- id: authorization
+  name: '@deepseek-ai/dsh-authorization'
+  disabled: false
 - id: credentials
   name: '@deepseek-ai/dsh-credentials-local'
   disabled: false
