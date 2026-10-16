@@ -88,14 +88,38 @@ export function createBridge(ctx: any, options: any = {}) {
     registerCommand(name: string, command: any) {
       ctx.get("commands")?.register({
         name: name.replaceAll(".", "-"),
-        description: command.description,
-        input: { hint: "参数" },
+        description:
+          "选择搜索后端：Google、OpenAI Codex、DeepSeek、MiniMax、ZAI",
+        input: {
+          hint: "google | openai | deepseek | minimax | zai（直接选中指令可展开候选）",
+        },
         async handler(inv: any) {
           let messages: string[] = [];
           if (!inv.rawInput.trim())
             return {
               kind: "success",
               text: "用法：/websearch-backend google|openai|deepseek|minimax|zai；也可在额度与费用面板设置。",
+            };
+          if (
+            ![
+              "google",
+              "openai",
+              "deepseek",
+              "minimax",
+              "zai",
+              "1",
+              "on",
+              "codex",
+              "ds",
+              "mm",
+              "bigmodel",
+              "0",
+              "off",
+            ].includes(inv.rawInput.trim().toLowerCase())
+          )
+            return {
+              kind: "error",
+              text: "无效搜索后端。请选择 google、openai、deepseek、minimax 或 zai。",
             };
           const c: any = context(inv.signal);
           c.hasUI = true;

@@ -449,17 +449,58 @@ export const inject = [
   "sidebarRightTabs",
   "sidebarRight",
   "modelDirectories",
+  "commandUi",
 ];
 export async function apply(ctx: any) {
   try {
     await ctx.remote.$mount(remoteInfo);
-    ctx.inject(["remote.yuQuota"], (ctx: any) => {
+    ctx.inject(["remote.yuQuota", "remote.commands"], (ctx: any) => {
       const native = ctx.remote.yuQuota;
       const api = {
         snapshot: () => native.snapshot(),
         preferences: () => native.preferences(),
         savePreferences: ({ value }: any) => native.savePreferences(value),
       };
+      ctx.effect(() =>
+        ctx.commandUi.decorate({
+          name: "websearch-backend",
+          available: () => true,
+          ui: {
+            kind: "popupSelect",
+            searchLabels: () => ({
+              placeholder: "选择搜索后端",
+              empty: "没有可用后端",
+              noResults: "没有匹配的后端",
+            }),
+            async options() {
+              const result = await api.preferences();
+              if (!result.ok) throw new Error(result.error.message);
+              return [
+                ["google", "Google · Antigravity"],
+                ["openai", "OpenAI · Codex"],
+                ["deepseek", "DeepSeek"],
+                ["minimax", "MiniMax"],
+                ["zai", "ZAI · 智谱"],
+              ].map(([id, label]) => ({
+                id,
+                label,
+                active: result.value.webSearchBackend === id,
+                detail: `${id} · 保存后重启 DSH 生效`,
+              }));
+            },
+            async onSelect(option: any, session: any) {
+              const result = await ctx.remote.commands.execute(
+                session.sessionId,
+                `/websearch-backend ${option.id}`,
+                [],
+              );
+              if (!result.ok) throw new Error(result.error.message);
+              if (!result.value || result.value.result.kind === "error")
+                throw new Error(result.value?.result.text ?? "指令不可用");
+            },
+          },
+        }),
+      );
       ctx.effect(() =>
         ctx.slots.inject("conversation.composer.dock", () =>
           ctx.slots.register(
