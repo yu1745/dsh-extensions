@@ -16,13 +16,13 @@
 推荐从 [GitHub Releases](https://github.com/yu1745/dsh-extensions/releases) 安装预构建包：
 
 ```bash
-dsh plugin --profile web add 'https://github.com/yu1745/dsh-extensions/releases/download/v0.1.0-alpha.3/yu1745-dsh-extensions-0.1.0-alpha.3.tgz'
+dsh plugin --profile web add 'https://github.com/yu1745/dsh-extensions/releases/download/v0.1.0-alpha.4/yu1745-dsh-extensions-0.1.0-alpha.4.tgz'
 ```
 
 或安装固定版本的 GitHub 源码：
 
 ```bash
-dsh plugin --profile web add 'github:yu1745/dsh-extensions#v0.1.0-alpha.3'
+dsh plugin --profile web add 'github:yu1745/dsh-extensions#v0.1.0-alpha.4'
 ```
 
 源码安装需要运行 `prepare` 构建。若 pnpm 要求构建授权，在该 profile 的 `pnpm-workspace.yaml` 中合并：
@@ -60,8 +60,8 @@ Linux 默认使用带界面的浏览器以处理 WAF；没有可用显示器时�
 ## 使用
 
 - 打开右侧栏，在“开始”页选择 **额度与费用**；已有对话的输入框下方也提供入口和当前提供方摘要，同时显示所有可用额度窗口（例如 `5h 剩余 80% · 周 剩余 60%`）。
-- 在面板中选择搜索后端、Decision 服务和模型；保存后重启 DSH 或重新加载对应插件。
-- 输入 `/websearch-backend`，从指令菜单选中或按回车，会在输入框上方展开五个后端候选；支持搜索、方向键和回车选择，标记当前已保存的后端。也可直接输入 `/websearch-backend zai`，无效参数会被拒绝。选择后重新加载搜索插件或重启生效；工具参数随后端变化，提示缓存可能失效。
+- 面板中的搜索后端是新会话默认值；当前会话通过下方命令即时切换。Decision 服务和模型保存后需重新加载读取插件或重启 DSH。
+- 输入 `/websearch-backend`，从指令菜单选中或按回车，会在输入框上方展开五个后端候选；支持搜索、方向键和回车选择，标记当前会话的后端。也可直接输入 `/websearch-backend zai`，无效参数会被拒绝。选择后在当前空闲会话立即生效，恢复会话后保留，不影响其他会话；工具参数和提示词随后端变化，提示缓存可能失效。
 - 网页判断通过 PiAI 的通用 `Models.classify` 调用。默认 `typesafe / jev-latest`，也支持 `openai / gpt-6-luna` 和 OpenRouter `/api/alpha/decisions` 的任意可用模型 ID，例如 `microsoft/microsoft-decision-1`。
 - OpenAI Decisions 需要 `OPENAI_API_KEY`，不能使用 Codex OAuth；另外两类使用 `TYPESAFE_API_KEY` 和 `OPENROUTER_API_KEY`。
 - `/fast` 和 `/ultrafast` 分别请求 `priority` 和 `ultrafast` service tier。它们只影响当前会话以后的 Codex 请求；已创建的子会话保留各自快照，实际可用性由模型和账户决定。
@@ -69,6 +69,8 @@ Linux 默认使用带界面的浏览器以处理 WAF；没有可用显示器时�
 在插件页分别停用 `yu-web-search` 或 `yu-web-reader` 时，恢复对应的 DSH 内置工具。标准、PTC 和 Creator 预设采用相同规则；最小预设保留原来的工具范围。组合胶水行 `yu-extensions` 和 `yu-web-tools` 随整个包启停。
 
 ## 费用与历史
+
+面板铺满可用宽度，额度卡片随宽度排列。历史支持 24 小时、7 天、30 天和全部范围；悬停或触摸查看时间与数值，点击图例显示或隐藏曲线，也可聚焦图表后用方向键、Home/End 查看数据。
 
 费用全部为 **USD**。DeepSeek 使用[官方美元分时价](https://api-docs.deepseek.com/quick_start/pricing/)，不进行汇率换算；余额保留接口返回的原币种，不将人民币余额伪装为美元。
 

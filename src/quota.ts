@@ -1,3 +1,4 @@
+import { searchBackendFor } from "./search-context.js";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import lockfile from "proper-lockfile";
 import { mkdirSync } from "node:fs";
@@ -326,6 +327,9 @@ export class Quota extends TypertRemoteService {
         model: "jev-latest",
       },
     };
+  }
+  searchBackend(sessionId: string) {
+    return { backend: searchBackendFor(sessionId) };
   }
   savePreferences(value: any) {
     updateSettings(value);

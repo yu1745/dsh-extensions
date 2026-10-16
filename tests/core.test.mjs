@@ -159,6 +159,7 @@ function fakeContext() {
     tools = new Map(),
     prompts = new Map();
   const ctx = {
+    agents: { list: () => [] },
     credentials: {
       readRecord: async () => undefined,
       resolve: async () => undefined,

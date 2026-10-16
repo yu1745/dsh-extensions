@@ -11,9 +11,10 @@ export function normalizeSchema(value: any): any {
 export function createBridge(ctx: any, options: any = {}) {
   const shutdown: Function[] = [];
   const toolDisposers: Function[] = [];
-  const release = options.kind
-    ? ctx.yuExtensions.claim(options.kind)
-    : undefined;
+  const release =
+    options.kind && options.claim !== false
+      ? ctx.yuExtensions.claim(options.kind)
+      : undefined;
 
   const context = (signal?: AbortSignal, sessionId?: string) => ({
     hasUI: false,
@@ -27,7 +28,7 @@ export function createBridge(ctx: any, options: any = {}) {
   return {
     registerTool(tool: any) {
       toolDisposers.push(
-        ctx.yuExtensions.install(
+        (options.install ?? ctx.yuExtensions.install.bind(ctx.yuExtensions))(
           options.kind,
           {
             name: tool.name,
@@ -86,6 +87,7 @@ export function createBridge(ctx: any, options: any = {}) {
       );
     },
     registerCommand(name: string, command: any) {
+      if (options.commands === false) return;
       ctx.get("commands")?.register({
         name: name.replaceAll(".", "-"),
         description:

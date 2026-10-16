@@ -64,8 +64,7 @@ function emitOutput(
   else console.log(text);
 }
 
-export default function webSearchExtension(pi: ExtensionAPI) {
-  const currentBackend = getWebSearchBackend();
+export default function webSearchExtension(pi: ExtensionAPI, currentBackend: WebSearchBackend = getWebSearchBackend()) {
 
   // ── /websearch-backend command with interactive UI selection ─────────────
 

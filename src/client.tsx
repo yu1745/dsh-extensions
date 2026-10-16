@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useSyncExternalStore } from "react";
 import { remoteInfo } from "./remote.js";
+import { HistoryChart, type ChartRange } from "./quota-chart.js";
+import { styles } from "./quota-styles.js";
 const ID = "@yu1745/dsh-extensions";
 const labels: any = {
   deepseek: "DeepSeek",
@@ -15,61 +17,6 @@ const money = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 6,
   }).format(n);
-const styles = `.yu-quota{font:inherit;padding:20px;color:var(--dsw-alias-text-primary,inherit);max-width:980px;margin:auto}.yu-quota h2{font-size:22px;margin:0 0 6px}.yu-quota h3{font-size:16px;margin:24px 0 10px}.yu-quota p{line-height:1.6;margin:6px 0}.yu-muted{opacity:.65;font-size:12px}.yu-row{border-top:1px solid var(--dsw-alias-border-l3,#ccc);padding:16px 0}.yu-heading{display:flex;align-items:baseline;justify-content:space-between;gap:10px}.yu-quota button,.yu-quota select,.yu-quota input{font:inherit;color:inherit;background:var(--dsw-alias-bg-base,transparent);border:1px solid var(--dsw-alias-border-l3,#aaa);border-radius:8px;padding:7px 10px}.yu-quota button{cursor:pointer;transition:transform .15s}.yu-quota button:active{transform:scale(.98)}.yu-quota :focus-visible{outline:2px solid #788c5d;outline-offset:3px}.yu-quota button:disabled{opacity:.5;cursor:wait}.yu-controls{display:grid;grid-template-columns:1fr 1fr;gap:12px}.yu-controls label{display:grid;gap:6px;font-size:13px}.yu-quota pre{white-space:pre-wrap;overflow-wrap:anywhere;font-size:12px;max-height:240px;overflow:auto}.yu-chart{display:block;width:100%;height:116px;margin:10px 0 0;overflow:visible}.yu-warning{color:var(--dsw-alias-text-warning,#9b5a19)}.yu-details{font-size:12px;margin-top:8px}.yu-skeleton{height:100px;border-radius:10px;background:var(--dsw-alias-border-l3,#eee);opacity:.5;animation:yu-pulse 1.6s ease-in-out infinite}.yu-table{border-collapse:collapse;width:100%;font-size:12px}.yu-table td,.yu-table th{padding:8px 4px;text-align:left;border-bottom:1px solid var(--dsw-alias-border-l3,#ddd)}@keyframes yu-pulse{50%{opacity:.2}}@media(prefers-reduced-motion:reduce){.yu-skeleton{animation:none}.yu-quota button{transition:none}}@media(max-width:500px){.yu-controls{grid-template-columns:1fr}.yu-quota{padding:14px}}`;
-function Chart({ rows, unit }: { rows: any[]; unit: string }) {
-  if (!rows.length)
-    return (
-      <p className="yu-muted">暂无历史记录。后台每分钟检查，数值变化时记录。</p>
-    );
-  const minT = rows[0].timestamp,
-    maxT = rows.at(-1).timestamp;
-  const max = unit === "%" ? 100 : Math.max(...rows.map((r) => r.value), 1);
-  const min = unit === "%" ? 0 : Math.min(...rows.map((r) => r.value), 0);
-  const path = rows
-    .map(
-      (r, i) =>
-        `${i ? "L" : "M"}${(8 + ((r.timestamp - minT) / Math.max(1, maxT - minT)) * 384).toFixed(2)},${(100 - ((r.value - min) / Math.max(1, max - min)) * 84).toFixed(2)}`,
-    )
-    .join(" ");
-  return (
-    <>
-      <svg
-        className="yu-chart"
-        viewBox="0 0 400 116"
-        role="img"
-        aria-label={`${unit} 历史曲线`}
-      >
-        <path
-          d="M8 16H392 M8 100H392"
-          stroke="currentColor"
-          opacity=".12"
-          fill="none"
-        />
-        <path
-          d={path}
-          fill="none"
-          stroke="#788c5d"
-          strokeWidth="2"
-          vectorEffect="non-scaling-stroke"
-        />
-        {rows.length === 1 && (
-          <circle
-            cx="8"
-            cy={100 - ((rows[0].value - min) / Math.max(1, max - min)) * 84}
-            r="3"
-            fill="#788c5d"
-          />
-        )}
-        <text x="8" y="12" fontSize="9" fill="currentColor" opacity=".6">
-          {max.toFixed(unit === "%" ? 0 : 2)} {unit}
-        </text>
-      </svg>
-      <p className="yu-muted">
-        {new Date(minT).toLocaleString()} — {new Date(maxT).toLocaleString()}
-      </p>
-    </>
-  );
-}
 function series(payload: any): any[] {
   if (!payload) return [];
   if (payload.currency)
@@ -124,7 +71,8 @@ export function Panel({ api }: { api: any }) {
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
     [prefs, setPrefs] = useState<any>(null),
-    [notice, setNotice] = useState("");
+    [notice, setNotice] = useState(""),
+    [range, setRange] = useState<ChartRange>("7d");
   async function reload() {
     setBusy(true);
     try {
@@ -151,7 +99,7 @@ export function Panel({ api }: { api: any }) {
     try {
       const r = await api.savePreferences({ value: prefs });
       if (!r.ok) throw r.error;
-      setNotice("已保存。重启 DSH 后生效。");
+      setNotice("已保存新会话默认后端。语义判断设置将在重启 DSH 后生效。");
     } catch (e: any) {
       setNotice(e.message);
     }
@@ -176,57 +124,84 @@ export function Panel({ api }: { api: any }) {
       {!data && !error && <div className="yu-skeleton" aria-label="正在读取" />}
       {data && (
         <>
-          {Object.entries(labels).map(([id, label]: any) => {
-            const item = data.providers?.[id];
-            const lines = series(item?.payload);
-            const history = data.history?.[item?.account] ?? [];
-            return (
-              <article className="yu-row" key={id}>
-                <div className="yu-heading">
-                  <strong>{label}</strong>
-                  <span className="yu-muted">
-                    {item?.fetchedAt
-                      ? new Date(item.fetchedAt).toLocaleString()
-                      : "尚未成功更新"}
-                  </span>
-                </div>
-                {item?.error && (
-                  <p className="yu-warning">
-                    {item.error}
-                    {item.payload ? "；显示上次成功数据" : ""}
-                  </p>
-                )}
-                {!item && <p className="yu-muted">等待后台首次刷新。</p>}
-                {lines.map((s: any) => (
-                  <div key={s.key}>
-                    <p>
-                      {s.name}{" "}
-                      <strong>
-                        {s.unit === "USD"
-                          ? money(s.value)
-                          : `${s.value.toFixed(2)} ${s.unit}`}
-                      </strong>
-                    </p>
-                    <Chart
-                      unit={s.unit}
-                      rows={history.flatMap((h: any) => {
-                        const p = h.points.find((p: any) => p.name === s.key);
-                        return p
-                          ? [{ timestamp: h.timestamp, value: p.value }]
-                          : [];
-                      })}
-                    />
+          <div className="yu-range" role="group" aria-label="历史时间范围">
+            <span>历史</span>
+            {(
+              [
+                ["24h", "24 小时"],
+                ["7d", "7 天"],
+                ["30d", "30 天"],
+                ["all", "全部"],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                aria-pressed={range === value}
+                onClick={() => setRange(value)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+          <div className="yu-providers">
+            {Object.entries(labels).map(([id, label]: any) => {
+              const item = data.providers?.[id];
+              const lines = series(item?.payload);
+              const history = data.history?.[item?.account] ?? [];
+              return (
+                <article className="yu-row" key={id}>
+                  <div className="yu-heading">
+                    <strong>{label}</strong>
+                    <time
+                      title={
+                        item?.fetchedAt
+                          ? new Date(item.fetchedAt).toLocaleString()
+                          : undefined
+                      }
+                    >
+                      {item?.fetchedAt
+                        ? new Date(item.fetchedAt).toLocaleTimeString([], {
+                            hour: "2-digit",
+                            minute: "2-digit",
+                          }) + " 更新"
+                        : "尚未更新"}
+                    </time>
                   </div>
-                ))}
-                {item?.payload && (
-                  <details className="yu-details">
-                    <summary>来源明细与重置时间</summary>
-                    <pre>{JSON.stringify(item.payload, null, 2)}</pre>
-                  </details>
-                )}
-              </article>
-            );
-          })}
+                  {item?.error && (
+                    <p className="yu-warning">
+                      {item.error}
+                      {item.payload ? "；显示上次成功数据" : ""}
+                    </p>
+                  )}
+                  {!item && <p className="yu-muted">等待后台首次刷新。</p>}
+                  {lines.length > 0 && (
+                    <HistoryChart
+                      title={label}
+                      range={range}
+                      lines={lines.map((s: any) => ({
+                        ...s,
+                        rows: history.flatMap((h: any) => {
+                          const point = h.points.find(
+                            (p: any) => p.name === s.key,
+                          );
+                          return point
+                            ? [{ timestamp: h.timestamp, value: point.value }]
+                            : [];
+                        }),
+                      }))}
+                    />
+                  )}
+                  {item?.payload && (
+                    <details className="yu-details">
+                      <summary>来源明细与重置时间</summary>
+                      <pre>{JSON.stringify(item.payload, null, 2)}</pre>
+                    </details>
+                  )}
+                </article>
+              );
+            })}
+          </div>
           <h3>Codex 跨设备账本</h3>
           <p className="yu-muted">
             官方 credits × {data.codexLedger?.usdPerCredit ?? 0.04}{" "}
@@ -237,12 +212,21 @@ export function Panel({ api }: { api: any }) {
           )}
           {data.codexLedger?.days?.length ? (
             <>
-              <Chart
-                unit="USD"
-                rows={data.codexLedger.days.map((d: any) => ({
-                  timestamp: Date.parse(d.date),
-                  value: d.usd,
-                }))}
+              <HistoryChart
+                title="Codex 每日费用"
+                range={range}
+                lines={[
+                  {
+                    key: "usd",
+                    name: "每日费用",
+                    unit: "USD",
+                    value: data.codexLedger.days.at(-1)?.usd,
+                    rows: data.codexLedger.days.map((d: any) => ({
+                      timestamp: Date.parse(d.date),
+                      value: d.usd,
+                    })),
+                  },
+                ]}
               />
               <table className="yu-table">
                 <thead>
@@ -317,9 +301,10 @@ export function Panel({ api }: { api: any }) {
       {prefs && (
         <>
           <h3>网页工具设置</h3>
+          <p className="yu-muted">当前会话使用 /websearch-backend 即时切换。</p>
           <div className="yu-controls">
             <label>
-              搜索后端
+              新会话默认搜索后端
               <select
                 value={prefs.webSearchBackend}
                 onChange={(e) =>
@@ -472,8 +457,8 @@ export async function apply(ctx: any) {
               empty: "没有可用后端",
               noResults: "没有匹配的后端",
             }),
-            async options() {
-              const result = await api.preferences();
+            async options(session: any) {
+              const result = await native.searchBackend(session.sessionId);
               if (!result.ok) throw new Error(result.error.message);
               return [
                 ["google", "Google · Antigravity"],
@@ -484,8 +469,8 @@ export async function apply(ctx: any) {
               ].map(([id, label]) => ({
                 id,
                 label,
-                active: result.value.webSearchBackend === id,
-                detail: `${id} · 保存后重启 DSH 生效`,
+                active: result.value.backend === id,
+                detail: `${id} · 当前会话立即生效`,
               }));
             },
             async onSelect(option: any, session: any) {
