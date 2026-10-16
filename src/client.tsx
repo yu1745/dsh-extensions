@@ -100,7 +100,20 @@ function series(payload: any): any[] {
   return Object.entries(windows)
     .filter(([, v]: any) => Number.isFinite(v?.leftPercent))
     .map(([key, v]: any) => ({
-      name: key,
+      name:
+        key === "weekly" || key === "week"
+          ? "周"
+          : key === "mcp"
+            ? "MCP"
+            : key === "primary" || key === "secondary"
+              ? v.windowSeconds
+                ? v.windowSeconds >= 604800
+                  ? "周"
+                  : `${v.windowSeconds / 3600}h`
+                : key === "primary"
+                  ? "5h"
+                  : "周"
+              : "5h",
       value: v.leftPercent,
       unit: "%",
       key,
@@ -402,9 +415,9 @@ function QuotaDock({
       ? "deepseek"
       : model.current?.provider;
   const item = data?.providers?.[provider];
-  const first = series(item?.payload)[0];
-  const text = first
-    ? `${labels[provider]} ${first.unit === "USD" ? money(first.value) : `${first.value.toFixed(1)} ${first.unit}`}`
+  const quotas = series(item?.payload);
+  const text = quotas.length
+    ? `${labels[provider]} ${quotas.map((quota: any) => (quota.unit === "%" ? `${quota.name} 剩余 ${quota.value.toFixed(1)}%` : quota.unit === "USD" ? money(quota.value) : `${quota.value.toFixed(1)} ${quota.unit}`)).join(" · ")}`
     : (labels[provider] ?? "");
   return (
     <button
@@ -420,6 +433,9 @@ function QuotaDock({
         cursor: "pointer",
         padding: "4px 8px",
         opacity: 0.75,
+        textAlign: "left",
+        whiteSpace: "normal",
+        overflowWrap: "anywhere",
       }}
     >
       额度与费用{text ? ` · ${text}` : ""}
