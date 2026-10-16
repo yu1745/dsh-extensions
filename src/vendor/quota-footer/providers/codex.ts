@@ -24,6 +24,19 @@ export interface CodexPayload {
 	planType?: string;
 	allowed?: boolean;
 	limitReached?: boolean;
+	credits?: { balance?: number; unlimited?: boolean; hasCredits?: boolean; overageLimitReached?: boolean };
+}
+
+export function parseCodexCredits(value: any): CodexPayload["credits"] {
+	if (!value || typeof value !== "object") return undefined;
+	const raw = value.balance;
+	const balance = typeof raw === "number" || (typeof raw === "string" && raw.trim()) ? Number(raw) : NaN;
+	return {
+		...(Number.isFinite(balance) ? { balance } : {}),
+		...(typeof value.unlimited === "boolean" ? { unlimited: value.unlimited } : {}),
+		...(typeof value.has_credits === "boolean" ? { hasCredits: value.has_credits } : {}),
+		...(typeof value.overage_limit_reached === "boolean" ? { overageLimitReached: value.overage_limit_reached } : {}),
+	};
 }
 
 export function codexTtlFor(_payload: unknown): number {
@@ -52,6 +65,7 @@ export function parseCodexUsage(body: any): FetchResult {
 		fetchedAt: Date.now(),
 		payload: {
 			primary,
+			...(body.credits ? { credits: parseCodexCredits(body.credits) } : {}),
 			...(secondary ? { secondary } : {}),
 			...(typeof body.plan_type === "string" ? { planType: body.plan_type } : {}),
 			...(typeof body.rate_limit?.allowed === "boolean" ? { allowed: body.rate_limit.allowed } : {}),

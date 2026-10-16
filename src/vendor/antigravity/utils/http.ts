@@ -1,3 +1,4 @@
+import { providerFetch } from "../../../provider-http.js";
 import { antigravityEnv } from "./util.js";
 
 /**
@@ -65,6 +66,7 @@ export async function antigravityFetch(
   input: string | URL,
   init: RequestInit = {},
 ): Promise<Response> {
+  if (hasProxyConfiguration() || process.env.ANTIGRAVITY_PROXY) return providerFetch(input, init);
   const dispatcher = await getDispatcher();
   if (!dispatcher) return fetch(input, init);
   return fetch(input, { ...init, dispatcher } as DispatcherInit);

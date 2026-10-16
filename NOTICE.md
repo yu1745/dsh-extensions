@@ -1,10 +1,14 @@
 # Third-party notices
 
-The web search, browser reader and quota parsers in `src/vendor/` are ported from
+The Antigravity provider, web search, browser reader and quota parsers in `src/vendor/` are ported from
 [yu1745/pi-extensions](https://github.com/yu1745/pi-extensions), under the MIT
 license (snapshot c66681c). Their upstream copyright notices and the original MIT license are
 retained. DSH integration, credentials, classifier routing, polling, cost storage
 and browser UI live outside that directory.
+
+The CodeBuddy model catalog and account protocol in `src/codebuddy-*.ts` are
+adapted from the same MIT-licensed source. Its FP switch, official prompt/tool
+replacement and simulated telemetry are not included.
 
 The preset declarations in `presets/` are adapted from
 [deepseek-ai/deepseek-harness](https://github.com/deepseek-ai/deepseek-harness),

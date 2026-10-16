@@ -1,7 +1,7 @@
 {
   "name": "@yu1745/dsh-extensions",
-  "version": "0.1.0-alpha.5",
-  "description": "Web search and reader, quota charts, USD cost tracking and session Codex speed modes for DSH",
+  "version": "0.2.0-alpha.1",
+  "description": "Antigravity and CodeBuddy providers, web tools, quota and credits, USD costs and Codex speed modes for DSH",
   "type": "module",
   "license": "MIT",
   "author": "yu1745",
@@ -26,7 +26,8 @@
     "./quota": "./lib/quota.js",
     "./codex-fast": "./lib/codex-fast.js",
     "./package.json": "./package.json",
-    "./web-tools": "./lib/web-tools.js"
+    "./web-tools": "./lib/web-tools.js",
+    "./providers": "./lib/providers.js"
   },
   "dsh": {
     "bundle": {
@@ -69,6 +70,7 @@
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.5-alpha.2",
     "@deepseek-ai/dsh-credentials": "0.2.1-alpha.4",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-scope": "^0.2.1-alpha.4",
     "@deepseek-ai/dsh-tool-web": "0.2.1-alpha.4",
@@ -87,11 +89,12 @@
     "@deepseek-ai/cordis": "~4.0.5-alpha.2",
     "@deepseek-ai/dsh-credentials": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-alpha.4",
+    "@deepseek-ai/dsh-scope": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-tool-web": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-tools": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-typert-protocol": "0.2.1-alpha.4",
     "@deepseek-ai/schemastery": "~3.18.5-alpha.2",
     "@earendil-works/pi-ai": "1.2.0",
-    "@deepseek-ai/dsh-scope": "0.2.1-alpha.4"
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.4"
   }
 }

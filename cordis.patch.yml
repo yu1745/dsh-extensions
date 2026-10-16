@@ -14,6 +14,8 @@
       name: '@yu1745/dsh-extensions/web-tools'
       config:
         root: true
+    - id: yu-providers
+      name: '@yu1745/dsh-extensions/providers'
     - id: yu-web-search
       name: '@yu1745/dsh-extensions/web-search'
     - id: yu-web-reader

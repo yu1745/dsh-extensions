@@ -1,3 +1,5 @@
+import { ProviderPanel } from "./provider-panel.js";
+import { providerRemoteInfo } from "./provider-remote.js";
 import React, { useState, useEffect, useSyncExternalStore } from "react";
 import { remoteInfo } from "./remote.js";
 import { HistoryChart, type ChartRange } from "./quota-chart.js";
@@ -175,6 +177,23 @@ export function Panel({ api }: { api: any }) {
                     </p>
                   )}
                   {!item && <p className="yu-muted">等待后台首次刷新。</p>}
+                  {id === "openai-codex" && item?.payload && (
+                    <div className="yu-legend">
+                      <div className="yu-metric" aria-label="剩余 credits">
+                        <span className="yu-metric-label">剩余 credits</span>
+                        <strong>
+                          {item.payload.credits?.unlimited
+                            ? "不限量"
+                            : typeof item.payload.credits?.balance === "number"
+                              ? item.payload.credits.balance.toLocaleString(
+                                  undefined,
+                                  { maximumFractionDigits: 2 },
+                                )
+                              : "未提供"}
+                        </strong>
+                      </div>
+                    </div>
+                  )}
                   {lines.length > 0 && (
                     <HistoryChart
                       title={label}
@@ -300,6 +319,7 @@ export function Panel({ api }: { api: any }) {
       )}
       {prefs && (
         <>
+          {api.providers && <ProviderPanel api={api.providers} />}
           <h3>网页工具设置</h3>
           <p className="yu-muted">当前会话使用 /websearch-backend 即时切换。</p>
           <div className="yu-controls">
@@ -439,13 +459,27 @@ export const inject = [
 export async function apply(ctx: any) {
   try {
     await ctx.remote.$mount(remoteInfo);
+    await ctx.remote.$mount(providerRemoteInfo);
     ctx.inject(["remote.yuQuota", "remote.commands"], (ctx: any) => {
       const native = ctx.remote.yuQuota;
       const api = {
+        providers: undefined as any,
         snapshot: () => native.snapshot(),
         preferences: () => native.preferences(),
         savePreferences: ({ value }: any) => native.savePreferences(value),
       };
+      ctx.inject(["remote.yuProviders"], (providerCtx: any) => {
+        const providers = providerCtx.remote.yuProviders;
+        api.providers = {
+          status: () => providers.status(),
+          loginStart: (id: string) => providers.loginStart(id),
+          loginAnswer: (answer: any) => providers.loginAnswer(answer),
+          loginCancel: (id: string) => providers.loginCancel(id),
+        };
+        providerCtx.on("dispose", () => {
+          api.providers = undefined;
+        });
+      });
       ctx.effect(() =>
         ctx.commandUi.decorate({
           name: "websearch-backend",

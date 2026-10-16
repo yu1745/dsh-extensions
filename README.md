@@ -1,11 +1,12 @@
 # DSH Extensions
 
-一个 GitHub 分发的包，包含多个可独立启停的 DSH 插件。当前为一期测试版，适配 **DSH 0.2.1-alpha.4 / Node.js 22+**。
+一个 GitHub 分发的包，包含多个可独立启停的 DSH 插件。当前包含一期网页工具与额度功能，以及二期 CodeBuddy / Antigravity 模型接入，适配 **DSH 0.2.1-alpha.4 / Node.js 22+**。
 
 | 插件 | 功能 |
 | --- | --- |
 | `yu-web-search` | Google Antigravity、OpenAI Codex、DeepSeek、MiniMax、ZAI 五后端，保留各自原生参数 |
 | `yu-web-reader` | Playwright 渲染、ARIA 提取、动态加载判断、Cloudflare 处理、截图与 DSH 附件 |
+| `yu-providers` | CodeBuddy、Antigravity 模型、浏览器登录与 DSH 凭据自动刷新 |
 | `yu-quota` | 五源额度、余额与历史曲线；Codex 跨设备账本；本机和原生子代理美元费用 |
 | `yu-codex-fast` | 会话级 `/fast`、`/ultrafast`、`/codex-speed`；子会话继承创建时快照 |
 
@@ -16,13 +17,13 @@
 推荐从 [GitHub Releases](https://github.com/yu1745/dsh-extensions/releases) 安装预构建包：
 
 ```bash
-dsh plugin --profile web add 'https://github.com/yu1745/dsh-extensions/releases/download/v0.1.0-alpha.4/yu1745-dsh-extensions-0.1.0-alpha.4.tgz'
+dsh plugin --profile web add 'https://github.com/yu1745/dsh-extensions/releases/download/v0.2.0-alpha.1/yu1745-dsh-extensions-0.2.0-alpha.1.tgz'
 ```
 
 或安装固定版本的 GitHub 源码：
 
 ```bash
-dsh plugin --profile web add 'github:yu1745/dsh-extensions#v0.1.0-alpha.4'
+dsh plugin --profile web add 'github:yu1745/dsh-extensions#v0.2.0-alpha.1'
 ```
 
 源码安装需要运行 `prepare` 构建。若 pnpm 要求构建授权，在该 profile 的 `pnpm-workspace.yaml` 中合并：
@@ -55,7 +56,11 @@ Linux 默认使用带界面的浏览器以处理 WAF；没有可用显示器时�
 
 导入只补充 DSH 中缺失的 DeepSeek、GLM、MiniMax、TypeSafe、OpenRouter 密钥和 Codex grant，保留 Pi 原文件。搜索后端、额度历史和 Codex 首日校准设置也会复制。导入标记和数据保存在 `$DSH_HOME/extensions/yu1745/`，密钥由 DSH credentials 服务持有。
 
-一期的 Antigravity 搜索和额度读取 Pi 的当前 access token，**不刷新 Pi 的 token**。过期时在 Pi 中刷新登录；独立模型接入与刷新职责迁移留到二期。
+CodeBuddy 和 Antigravity 的 OAuth 由 `yu-providers` 管理，保存在 DSH credentials 的 `llm-pi-ai/codebuddy` 与 `llm-pi-ai/antigravity`，刷新由 DSH 的凭据锁串行化。模型、Antigravity 搜索和额度查询共用这份授权；运行时不再读取 Pi 的 token。
+
+在 **额度与费用 → 服务登录** 中登录或重新授权。Antigravity 支持本机回调，也支持远程浏览器完成登录后粘贴完整回调 URL。CodeBuddy 支持浏览器授权或导入本机官方 CLI 的已有凭据。不要让 Pi 与 DSH 同时刷新同一份迁移授权；迁移时先备份并验证 DSH 写入，再移除 Pi 中对应条目。
+
+CodeBuddy 从账号的 `/v3/config` 获取模型目录并缓存，发现失败时使用上次目录。**不提供 FP 开关，不替换系统提示词或工具定义，不发送模拟遥测**。请求保留服务端所需的认证和客户端协议头；DSH 的工具调用、推理档位、取消信号和会话标识直接传递。
 
 ## 使用
 
@@ -69,6 +74,8 @@ Linux 默认使用带界面的浏览器以处理 WAF；没有可用显示器时�
 在插件页分别停用 `yu-web-search` 或 `yu-web-reader` 时，恢复对应的 DSH 内置工具。标准、PTC 和 Creator 预设采用相同规则；最小预设保留原来的工具范围。组合胶水行 `yu-extensions` 和 `yu-web-tools` 随整个包启停。
 
 ## 费用与历史
+
+Codex 卡片单独显示官方返回的剩余 credits（支持零余额和不限量状态）；接口未返回时显示“未提供”，不会从历史花费反推余额。
 
 面板铺满可用宽度，额度卡片随宽度排列。历史支持 24 小时、7 天、30 天和全部范围；悬停或触摸查看时间与数值，点击图例显示或隐藏曲线，也可聚焦图表后用方向键、Home/End 查看数据。
 

@@ -1,9 +1,6 @@
 import { credentialKey, credentialRef } from "@deepseek-ai/dsh-credentials";
 import { createModels } from "@earendil-works/pi-ai";
 import { openaiCodexProvider } from "@earendil-works/pi-ai/providers/openai-codex";
-import { readJson } from "./state.js";
-import { homedir } from "node:os";
-import { join } from "node:path";
 const oauthClients = new WeakMap<object, any>();
 export function codexModels(ctx: any) {
   let m = oauthClients.get(ctx.credentials);
@@ -41,6 +38,9 @@ const refs: Record<string, string[]> = {
 };
 export async function providerAuth(ctx: any, provider: string) {
   if (provider === "openai-codex") return codexModels(ctx).getAuth(provider);
+  const owner = ctx.get("yuProviders");
+  if (["codebuddy", "antigravity"].includes(provider) && owner)
+    return owner.getAuth(provider);
   // DSH's owning adapter resolves and refreshes OAuth under its credential lock.
   const adapter = ctx.get("yuPiAuth");
   if (adapter) {
@@ -69,21 +69,6 @@ export async function providerAuth(ctx: any, provider: string) {
   for (const ref of refs[provider] ?? []) {
     const v = await ctx.credentials.resolve(credentialRef(ref));
     if (v?.value) return { auth: { apiKey: v.value } };
-  }
-  // Phase-one Antigravity refresh remains Pi-owned; re-read every operation.
-  if (provider === "antigravity") {
-    const c: any = readJson(join(homedir(), ".pi/agent/auth.json"), {} as any)[
-      provider
-    ];
-    if (c?.access) {
-      if (c.expires && c.expires <= Date.now())
-        throw new Error("Antigravity 凭据已过期；请在 Pi 中刷新登录");
-      return {
-        auth: {
-          apiKey: JSON.stringify({ token: c.access, projectId: c.projectId }),
-        },
-      };
-    }
   }
   return undefined;
 }

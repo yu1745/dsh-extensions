@@ -6,6 +6,10 @@ const nodeBuild = await build({
   metafile: true,
   entryPoints: {
     index: "src/index.ts",
+    providers: "src/providers.ts",
+    "codebuddy-provider": "src/codebuddy-provider.ts",
+    "antigravity-provider": "src/antigravity-provider.ts",
+    "codex-quota": "src/vendor/quota-footer/providers/codex.ts",
     "web-search": "src/web-search.ts",
     "web-reader": "src/web-reader.ts",
     "web-tools": "src/web-tools.ts",
