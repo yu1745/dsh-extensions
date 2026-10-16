@@ -1,5 +1,5 @@
 export const styles = `
-.yu-quota{font:inherit;color:var(--dsw-alias-text-primary,inherit);box-sizing:border-box;width:100%;min-width:0;max-width:none;flex:1;align-self:stretch;margin:0;padding:20px;container-type:inline-size}
+.yu-quota{font:inherit;color:var(--dsw-alias-text-primary,inherit);box-sizing:border-box;width:100%;height:100%;min-width:0;min-height:0;max-width:none;overflow:auto;scrollbar-gutter:stable;flex:1;align-self:stretch;margin:0;padding:20px;container-type:inline-size}
 .yu-quota *{box-sizing:border-box}
 .yu-quota h2{font-size:20px;letter-spacing:-.02em;margin:0;font-weight:650}
 .yu-quota h3{font-size:15px;margin:28px 0 10px}

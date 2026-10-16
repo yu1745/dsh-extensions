@@ -1,6 +1,6 @@
 {
   "name": "@yu1745/dsh-extensions",
-  "version": "0.1.0-alpha.4",
+  "version": "0.1.0-alpha.5",
   "description": "Web search and reader, quota charts, USD cost tracking and session Codex speed modes for DSH",
   "type": "module",
   "license": "MIT",
