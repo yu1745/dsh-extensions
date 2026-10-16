@@ -40,7 +40,7 @@ const client = await build({
   format: "cjs",
   platform: "browser",
   target: "es2022",
-  external: ["react", "react/jsx-runtime", "@deepseek-ai/cordis"],
+  external: ["react", "react-dom", "react/jsx-runtime", "@deepseek-ai/cordis"],
   jsx: "automatic",
 });
 await writeFile(

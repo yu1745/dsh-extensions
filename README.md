@@ -17,13 +17,13 @@
 推荐从 [GitHub Releases](https://github.com/yu1745/dsh-extensions/releases) 安装预构建包：
 
 ```bash
-dsh plugin --profile web add 'https://github.com/yu1745/dsh-extensions/releases/download/v0.2.0-alpha.2/yu1745-dsh-extensions-0.2.0-alpha.2.tgz'
+dsh plugin --profile web add 'https://github.com/yu1745/dsh-extensions/releases/download/v0.2.0-alpha.3/yu1745-dsh-extensions-0.2.0-alpha.3.tgz'
 ```
 
 或安装固定版本的 GitHub 源码：
 
 ```bash
-dsh plugin --profile web add 'github:yu1745/dsh-extensions#v0.2.0-alpha.2'
+dsh plugin --profile web add 'github:yu1745/dsh-extensions#v0.2.0-alpha.3'
 ```
 
 源码安装需要运行 `prepare` 构建。若 pnpm 要求构建授权，在该 profile 的 `pnpm-workspace.yaml` 中合并：
@@ -63,6 +63,8 @@ CodeBuddy 和 Antigravity 的 OAuth 由 `yu-providers` 管理，保存在 DSH cr
 CodeBuddy 从账号的 `/v3/config` 获取模型目录并缓存，发现失败时使用上次目录。**不提供 FP 开关，不替换系统提示词或工具定义，不发送模拟遥测**。请求保留服务端所需的认证和客户端协议头；DSH 的工具调用、推理档位、取消信号和会话标识直接传递。
 
 ## 使用
+
+- 输入框的模型菜单按 **提供方 → 模型** 两级选择，显示各提供方模型数量；支持搜索提供方或模型、返回上一级、方向键和 Enter。推理档位继续使用当前模型提供的选项。
 
 - 打开右侧栏，在“开始”页选择 **额度与费用**；已有对话的输入框下方也提供入口和当前提供方摘要，同时显示所有可用额度窗口（例如 `5h 剩余 80% · 周 剩余 60%`）。
 - 面板中的搜索后端是新会话默认值；当前会话通过下方命令即时切换。Decision 服务和模型保存后需重新加载读取插件或重启 DSH。

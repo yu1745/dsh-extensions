@@ -1,3 +1,4 @@
+import { installModelMenu } from "./model-menu.js";
 import { ProviderPanel } from "./provider-panel.js";
 import { providerRemoteInfo } from "./provider-remote.js";
 import React, { useState, useEffect, useSyncExternalStore } from "react";
@@ -457,6 +458,7 @@ export const inject = [
   "commandUi",
 ];
 export async function apply(ctx: any) {
+  installModelMenu(ctx);
   try {
     await ctx.remote.$mount(remoteInfo);
     await ctx.remote.$mount(providerRemoteInfo);
