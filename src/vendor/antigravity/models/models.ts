@@ -1,0 +1,533 @@
+import type { ProviderModelConfig } from "@earendil-works/pi-coding-agent";
+import type { Api, Model, ModelCost } from "@earendil-works/pi-ai";
+import type { AntigravityRouting } from "../types/types.js";
+import { ThinkingEffort } from "../types/enums.js";
+
+export const PROVIDER_ID = "antigravity";
+export const PROVIDER_NAME = "Antigravity";
+
+/**
+ * Public selectable model IDs → backend request model IDs by thinking effort.
+ *
+ * Catalog mirrors `agy models` (Antigravity CLI 1.3.5), which advertises:
+ * - Gemini 4 Argon (Low / Medium / High) — Ultra-only, currently server-disabled
+ * - Gemini 3.8 Flash (Low / Medium / High)
+ * - Gemini 3.7 Flash (Low / Medium / High)
+ * - Gemini 3.6 Flash (Low / Medium / High)
+ * - Gemini 3.1 Pro (Low / High)
+ * - Claude Sonnet 4.6 (Thinking)
+ * - Claude Opus 4.6 (Thinking)
+ * - GPT-OSS 120B (Medium)
+ *
+ * Pi exposes those as public model IDs and only surfaces the exact thinking levels
+ * advertised by the backend for each model.
+ */
+export const ANTIGRAVITY_ROUTING: Record<string, AntigravityRouting> = {
+  // Gemini 4 Argon. agy 1.3.5 statically advertises the tiered ids below (its own
+  // display table maps them to "Gemini 4 Argon (Low|Medium|High)"). The live
+  // fetchAvailableModels response for a non-Ultra account only carries a single gated
+  // `gemini-4-argon-disabled` entry (displayName "Gemini 4 Argon", model enum
+  // MODEL_PLACEHOLDER_M421), so these ids are what agy will send once unlocked.
+  "gemini-4-argon": {
+    off: "gemini-4-argon-low",
+    routing: {
+      minimal: "gemini-4-argon-low",
+      low: "gemini-4-argon-low",
+      medium: "gemini-4-argon-medium",
+      high: "gemini-4-argon-high",
+      xhigh: "gemini-4-argon-high",
+    },
+    defaultRequestId: "gemini-4-argon-low",
+  },
+  "gemini-3.8-flash": {
+    off: "gemini-3.8-flash-low",
+    routing: {
+      minimal: "gemini-3.8-flash-low",
+      low: "gemini-3.8-flash-low",
+      medium: "gemini-3.8-flash-medium",
+      high: "gemini-3.8-flash-high",
+      xhigh: "gemini-3.8-flash-high",
+    },
+    defaultRequestId: "gemini-3.8-flash-low",
+  },
+  "claude-opus-4-6": {
+    routing: {
+      minimal: "claude-opus-4-6-thinking",
+      low: "claude-opus-4-6-thinking",
+      medium: "claude-opus-4-6-thinking",
+      high: "claude-opus-4-6-thinking",
+    },
+    defaultRequestId: "claude-opus-4-6-thinking",
+  },
+  // Live fetchAvailableModels exposes `claude-sonnet-4-6` (display: Thinking), not a separate *-thinking id.
+  "claude-sonnet-4-6": {
+    off: "claude-sonnet-4-6",
+    routing: {
+      minimal: "claude-sonnet-4-6",
+      low: "claude-sonnet-4-6",
+      medium: "claude-sonnet-4-6",
+      high: "claude-sonnet-4-6",
+      xhigh: "claude-sonnet-4-6",
+    },
+    defaultRequestId: "claude-sonnet-4-6",
+  },
+  "gemini-3.1-pro": {
+    // `gemini-3.1-pro-high` is advertised but currently 400s for agent streamGenerateContent;
+    // `gemini-pro-agent` is the working High runtime id (same display name in fetchAvailableModels).
+    off: "gemini-3.1-pro-low",
+    routing: {
+      minimal: "gemini-3.1-pro-low",
+      low: "gemini-3.1-pro-low",
+      medium: "gemini-3.1-pro-low",
+      high: "gemini-pro-agent",
+      xhigh: "gemini-pro-agent",
+    },
+    defaultRequestId: "gemini-3.1-pro-low",
+  },
+  "gemini-3.7-flash": {
+    off: "gemini-3.7-flash-low",
+    routing: {
+      minimal: "gemini-3.7-flash-low",
+      low: "gemini-3.7-flash-low",
+      medium: "gemini-3.7-flash-medium",
+      high: "gemini-3.7-flash-high",
+      xhigh: "gemini-3.7-flash-high",
+    },
+    defaultRequestId: "gemini-3.7-flash-low",
+  },
+  "gemini-3.6-flash": {
+    // agy models: gemini-3.6-flash-low / -medium / -high
+    off: "gemini-3.6-flash-low",
+    routing: {
+      minimal: "gemini-3.6-flash-low",
+      low: "gemini-3.6-flash-low",
+      medium: "gemini-3.6-flash-medium",
+      high: "gemini-3.6-flash-high",
+      xhigh: "gemini-3.6-flash-high",
+    },
+    defaultRequestId: "gemini-3.6-flash-low",
+  },
+  "gpt-oss-120b": {
+    off: "gpt-oss-120b-medium",
+    routing: {
+      minimal: "gpt-oss-120b-medium",
+      low: "gpt-oss-120b-medium",
+      medium: "gpt-oss-120b-medium",
+      high: "gpt-oss-120b-medium",
+    },
+    defaultRequestId: "gpt-oss-120b-medium",
+  },
+};
+
+/**
+ * Verified maximum output tokens accepted by the Cloud Code Assist backend per model/runtime ID.
+ * Requesting more than these limits returns a 400 Bad Request from the API.
+ */
+export const RUNTIME_MAX_OUTPUT_TOKENS: Record<string, number> = {
+  // Gemini 4 Argon: live fetchAvailableModels reports maxOutputTokens 65536.
+  "gemini-4-argon": 65536,
+  "gemini-4-argon-low": 65536,
+  "gemini-4-argon-medium": 65536,
+  "gemini-4-argon-high": 65536,
+  "gemini-3.8-flash": 65536,
+  "gemini-3.8-flash-low": 65536,
+  "gemini-3.8-flash-medium": 65536,
+  "gemini-3.8-flash-high": 65536,
+  "gemini-3.7-flash": 65536,
+  "gemini-3.7-flash-tiered": 65536,
+  // Retain rollout-era IDs for compatibility with pinned runtime overrides.
+  "gemini-3.7-flash-low": 65536,
+  "gemini-3.7-flash-medium": 65536,
+  "gemini-3.7-flash-high": 65536,
+  "gemini-3.6-flash": 65536,
+  "gemini-3.6-flash-low": 65536,
+  "gemini-3.6-flash-medium": 65536,
+  "gemini-3.6-flash-high": 65536,
+  "gemini-3.5-flash": 65536,
+  "gemini-3.5-flash-extra-low": 65536,
+  "gemini-3.5-flash-low": 65536,
+  "gemini-3-flash-agent": 65536,
+  "gemini-3.1-pro": 65535,
+  "gemini-3.1-pro-low": 65535,
+  "gemini-3.1-pro-high": 65535,
+  "gemini-pro-agent": 65535,
+  "claude-opus-4-6": 64000,
+  "claude-opus-4-6-thinking": 64000,
+  "claude-sonnet-4-6": 64000,
+  "gpt-oss-120b": 32768,
+  "gpt-oss-120b-medium": 32768,
+};
+
+export function getMaxOutputTokens(modelId: string, runtimeModel?: string): number {
+  if (runtimeModel && RUNTIME_MAX_OUTPUT_TOKENS[runtimeModel] !== undefined) {
+    return RUNTIME_MAX_OUTPUT_TOKENS[runtimeModel];
+  }
+  if (RUNTIME_MAX_OUTPUT_TOKENS[modelId] !== undefined) {
+    return RUNTIME_MAX_OUTPUT_TOKENS[modelId];
+  }
+  if (runtimeModel) {
+    if (runtimeModel.startsWith("claude-")) return 64000;
+    if (runtimeModel.startsWith("gpt-oss-")) return 32768;
+    if (runtimeModel.startsWith("gemini-3.1-pro") || runtimeModel === "gemini-pro-agent")
+      return 65535;
+    if (runtimeModel.startsWith("gemini-")) return 65536;
+  }
+  return 8192;
+}
+
+// Pricing per million tokens (matches official Google / Anthropic / OpenAI catalog rates)
+const costGeminiFlash: ModelCost = { input: 0.75, output: 3.75, cacheRead: 0.075, cacheWrite: 0 };
+const costGemini31Pro: ModelCost = { input: 2, output: 12, cacheRead: 0.2, cacheWrite: 0 };
+const costClaudeOpus46: ModelCost = { input: 5, output: 25, cacheRead: 0.5, cacheWrite: 6.25 };
+const costClaudeSonnet46: ModelCost = { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 };
+const costGptOss120b: ModelCost = { input: 0.15, output: 0.6, cacheRead: 0, cacheWrite: 0 };
+
+/**
+ * Rates keyed by the model the backend actually served (`modelVersion`), not by the
+ * id we requested.
+ *
+ * The requested id is only a routing label. Live traffic (2026-10) shows
+ * gemini-3.6-flash, gemini-3.7-flash, gemini-3.8-flash and gemini-pro-agent
+ * (a.k.a. "Gemini 3.1 Pro (High)") all answering as `gemini-3.8-flash-n`. Billing
+ * `model.cost` there charges Pro rates for Flash weights, so usage is priced from
+ * the served id instead.
+ *
+ * Only ids actually observed from the backend are listed. An id that is missing
+ * here keeps the requested model's rates and is reported by `/antigravity.doctor`,
+ * rather than silently guessing a cheaper number.
+ */
+const SERVED_MODEL_COST: Record<string, ModelCost> = {
+  // Gemini family. Every 3.6/3.7/3.8 tier and gemini-pro-agent currently report
+  // `gemini-3.8-flash-n`; the older ids below were returned by the same endpoint.
+  "gemini-3.8-flash-n": costGeminiFlash,
+  "gemini-3.8-flash": costGeminiFlash,
+  "gemini-3.7-flash": costGeminiFlash,
+  "gemini-3.6-flash": costGeminiFlash,
+  "gemini-3.5-flash": costGeminiFlash,
+  "gemini-3.5-flash-lite": costGeminiFlash,
+  "gemini-3-flash": costGeminiFlash,
+  "gemini-2.5-flash": costGeminiFlash,
+  "gemini-2.5-flash-lite": costGeminiFlash,
+  // Non-Gemini models echo their own id, so these only matter if Google ever
+  // consolidates them the way it did the Gemini tiers.
+  "claude-opus-4-6-thinking": costClaudeOpus46,
+  "claude-sonnet-4-6-thinking": costClaudeSonnet46,
+  "gpt-oss-120b-medium": costGptOss120b,
+};
+
+/** Prefix fallback for a served id we have no exact entry for, e.g. `gemini-4-pro-x`. */
+function servedCostByFamily(servedModel: string): ModelCost | undefined {
+  const id = servedModel.toLowerCase();
+  if (id.startsWith("claude-opus")) return costClaudeOpus46;
+  if (id.startsWith("claude-sonnet")) return costClaudeSonnet46;
+  if (id.startsWith("gpt-oss")) return costGptOss120b;
+  if (id.startsWith("gemini")) return costGeminiFlash;
+  return undefined;
+}
+
+export type ServedCostResolution = {
+  rates: ModelCost;
+  /** Served id the rates came from, or undefined when the requested id was used. */
+  pricedBy?: string;
+  /** True when the served id is unknown and we fell back to the requested rates. */
+  unknownServedModel: boolean;
+};
+
+/**
+ * Resolve pricing for one response. Falls back to the requested model's rates when
+ * the backend named a model we have no entry for, and flags it so the fallback is
+ * visible in diagnostics instead of silent.
+ */
+export function resolveServedModelCost(
+  servedModel: string | undefined,
+  requestedModel: Model<Api>,
+): ServedCostResolution {
+  const requested = requestedModel.cost;
+  if (!servedModel) return { rates: requested, unknownServedModel: false };
+
+  const exact = SERVED_MODEL_COST[servedModel];
+  if (exact) {
+    return {
+      rates: exact,
+      pricedBy: servedModel,
+      unknownServedModel: false,
+    };
+  }
+  const byFamily = servedCostByFamily(servedModel);
+  if (byFamily) return { rates: byFamily, pricedBy: `${servedModel}*`, unknownServedModel: false };
+
+  return { rates: requested, unknownServedModel: true };
+}
+
+// A null entry is intentionally hidden by Pi. Do not collapse levels that happen to
+// route to the same runtime ID: the UI must reflect the levels the backend advertises.
+const thinkingLevelMaps = {
+  lowMediumHigh: {
+    off: null,
+    minimal: null,
+    low: "low",
+    medium: "medium",
+    high: "high",
+    xhigh: null,
+    max: null,
+  },
+  lowHigh: {
+    off: null,
+    minimal: null,
+    low: "low",
+    medium: null,
+    high: "high",
+    xhigh: null,
+    max: null,
+  },
+  thinking: {
+    off: null,
+    minimal: null,
+    low: null,
+    medium: null,
+    high: "high",
+    xhigh: null,
+    max: null,
+  },
+  medium: {
+    off: null,
+    minimal: null,
+    low: null,
+    medium: "medium",
+    high: null,
+    xhigh: null,
+    max: null,
+  },
+} satisfies Record<string, Extract<ProviderModelConfig, { type?: "chat" }>["thinkingLevelMap"]>;
+
+/** Same set as `agy models`, collapsed to public Pi model IDs. */
+export const ANTIGRAVITY_MODELS: ProviderModelConfig[] = [
+  {
+    id: "gemini-4-argon",
+    name: "Gemini 4 Argon (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowMediumHigh,
+    input: ["text", "image"],
+    cost: costGeminiFlash,
+    contextWindow: 1048576,
+    maxTokens: 65536,
+  },
+  {
+    id: "gemini-3.8-flash",
+    name: "Gemini 3.8 Flash (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowMediumHigh,
+    input: ["text", "image"],
+    cost: costGeminiFlash,
+    contextWindow: 1048576,
+    maxTokens: 65536,
+  },
+  {
+    id: "gemini-3.7-flash",
+    name: "Gemini 3.7 Flash (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowMediumHigh,
+    input: ["text", "image"],
+    cost: costGeminiFlash,
+    contextWindow: 1048576,
+    maxTokens: 65536,
+  },
+  {
+    id: "gemini-3.6-flash",
+    name: "Gemini 3.6 Flash (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowMediumHigh,
+    input: ["text", "image"],
+    cost: costGeminiFlash,
+    contextWindow: 1048576,
+    maxTokens: 65536,
+  },
+  {
+    id: "claude-opus-4-6",
+    name: "Claude Opus 4.6 (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.thinking,
+    input: ["text", "image"],
+    cost: costClaudeOpus46,
+    contextWindow: 250000,
+    maxTokens: 64000,
+  },
+  {
+    id: "claude-sonnet-4-6",
+    name: "Claude Sonnet 4.6 (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.thinking,
+    input: ["text", "image"],
+    cost: costClaudeSonnet46,
+    contextWindow: 200000,
+    maxTokens: 64000,
+  },
+  {
+    id: "gemini-3.1-pro",
+    name: "Gemini 3.1 Pro (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.lowHigh,
+    input: ["text", "image"],
+    cost: costGemini31Pro,
+    contextWindow: 1048576,
+    maxTokens: 65535,
+  },
+  {
+    id: "gpt-oss-120b",
+    name: "GPT-OSS 120B (Antigravity)",
+    reasoning: true,
+    thinkingLevelMap: thinkingLevelMaps.medium,
+    input: ["text"],
+    cost: costGptOss120b,
+    contextWindow: 131072,
+    maxTokens: 32768,
+  },
+];
+
+/** Resolve public model id + thinking effort to Antigravity runtime model id. */
+export function getAntigravityRequestModelId(modelId: string, effort: string | undefined): string {
+  const r = ANTIGRAVITY_ROUTING[modelId];
+  if (!r) return modelId;
+
+  if (effort === undefined || effort === "off") {
+    return r.off ?? r.routing?.minimal ?? r.routing?.low ?? r.defaultRequestId ?? modelId;
+  }
+
+  const effortKey = effort as ThinkingEffort;
+  if (effortKey === ThinkingEffort.Xhigh) {
+    return (
+      r.routing?.xhigh ??
+      r.routing?.high ??
+      r.routing?.low ??
+      r.routing?.minimal ??
+      r.off ??
+      r.defaultRequestId ??
+      modelId
+    );
+  }
+
+  return (
+    r.routing?.[effortKey] ??
+    r.routing?.low ??
+    r.routing?.minimal ??
+    r.off ??
+    r.defaultRequestId ??
+    modelId
+  );
+}
+
+/**
+ * If a next-gen model (e.g. Gemini 3.7 Flash) is not yet available on the backend,
+ * provide a fallback runtime model ID (e.g. Gemini 3.6 Flash) to maintain availability.
+ */
+export function getFallbackRuntimeModel(runtimeModel: string, effort?: string): string | undefined {
+  if (runtimeModel === "gemini-3.8-flash-tiered") {
+    return getAntigravityRequestModelId("gemini-3.7-flash", effort);
+  }
+  if (runtimeModel.startsWith("gemini-3.8-flash-")) {
+    return runtimeModel.replace("gemini-3.8-flash-", "gemini-3.7-flash-");
+  }
+  if (runtimeModel === "gemini-3.8-flash") {
+    return "gemini-3.7-flash-low";
+  }
+  if (runtimeModel === "gemini-3.7-flash-tiered") {
+    return getAntigravityRequestModelId("gemini-3.6-flash", effort);
+  }
+  if (runtimeModel.startsWith("gemini-3.7-flash-")) {
+    return runtimeModel.replace("gemini-3.7-flash-", "gemini-3.6-flash-");
+  }
+  if (runtimeModel === "gemini-3.7-flash") {
+    return "gemini-3.6-flash-low";
+  }
+  return undefined;
+}
+
+export type GeminiThinkingLevel = "MINIMAL" | "LOW" | "MEDIUM" | "HIGH";
+
+export type ThinkingWire = {
+  includeThoughts: boolean;
+  thinkingLevel?: GeminiThinkingLevel;
+  thinkingBudget?: number;
+};
+
+/**
+ * Runtime model id → backend `labels.model_enum`.
+ *
+ * Originally captured from agy 1.2.4 `v1internal:streamGenerateContent` traffic; the same
+ * enum name is also published per model as the `model` field of
+ * `v1internal:fetchAvailableModels`, which is where the Gemini 4 Argon value below comes
+ * from. A runtime id that is absent here sends no `model_enum` rather than a guessed
+ * routing value.
+ */
+export const ANTIGRAVITY_MODEL_ENUM: Record<string, string> = {
+  // Gemini 4 Argon. fetchAvailableModels only exposes the gated id
+  // `gemini-4-argon-disabled` today and names its enum MODEL_PLACEHOLDER_M421; the tiered
+  // ids agy 1.3.5 advertises share that family enum.
+  "gemini-4-argon": "MODEL_PLACEHOLDER_M421",
+  "gemini-4-argon-low": "MODEL_PLACEHOLDER_M421",
+  "gemini-4-argon-medium": "MODEL_PLACEHOLDER_M421",
+  "gemini-4-argon-high": "MODEL_PLACEHOLDER_M421",
+  "gemini-4-argon-disabled": "MODEL_PLACEHOLDER_M421",
+  "gemini-3.8-flash-low": "MODEL_PLACEHOLDER_M320",
+  "gemini-3.8-flash-medium": "MODEL_PLACEHOLDER_M319",
+  "gemini-3.8-flash-high": "MODEL_PLACEHOLDER_M318",
+  "gemini-3.7-flash-low": "MODEL_PLACEHOLDER_M300",
+  "gemini-3.7-flash-medium": "MODEL_PLACEHOLDER_M299",
+  "gemini-3.7-flash-high": "MODEL_PLACEHOLDER_M298",
+  "gemini-3.6-flash-low": "MODEL_PLACEHOLDER_M73",
+  "gemini-3.6-flash-medium": "MODEL_PLACEHOLDER_M72",
+  "gemini-3.6-flash-high": "MODEL_PLACEHOLDER_M71",
+  "gemini-3.1-pro-low": "MODEL_PLACEHOLDER_M36",
+  "gemini-pro-agent": "MODEL_PLACEHOLDER_M16",
+  "claude-sonnet-4-6": "MODEL_PLACEHOLDER_M35",
+  "claude-opus-4-6-thinking": "MODEL_PLACEHOLDER_M26",
+  "gpt-oss-120b-medium": "MODEL_OPENAI_GPT_OSS_120B_MEDIUM",
+};
+
+/**
+ * Thinking budgets per runtime model. Verified against the `thinkingBudget` field that
+ * `v1internal:fetchAvailableModels` reports for each id (3.8 Flash low/medium/high =
+ * 1000/4000/-1), which matches what agy actually sends. The CLI drives Gemini 3.6/3.7/3.8
+ * Flash and Gemini 3.1 Pro with `thinkingBudget` (not `thinkingLevel`); `-1` means
+ * dynamic/unbounded. Claude and GPT-OSS get a fixed budget.
+ */
+const GEMINI_FLASH_THINKING_BUDGET: Record<string, number> = {
+  minimal: 1000,
+  low: 1000,
+  medium: 4000,
+  high: -1,
+  xhigh: -1,
+};
+
+export function getThinkingConfig(
+  modelId: string,
+  effort: string | undefined,
+): ThinkingWire | undefined {
+  if (
+    modelId === "gemini-4-argon" ||
+    modelId === "gemini-3.8-flash" ||
+    modelId === "gemini-3.7-flash" ||
+    modelId === "gemini-3.6-flash"
+  ) {
+    return {
+      includeThoughts: true,
+      thinkingBudget: GEMINI_FLASH_THINKING_BUDGET[effort ?? "low"] ?? 1000,
+    };
+  }
+  if (modelId === "gemini-3.1-pro") {
+    if (!effort || effort === "off") return { includeThoughts: false, thinkingBudget: 0 };
+    return {
+      includeThoughts: true,
+      thinkingBudget: effort === "high" || effort === "xhigh" ? 10_001 : 1_001,
+    };
+  }
+  // Claude Sonnet/Opus 4.6 route through the "(Thinking)" variants: agy always asks for
+  // a small fixed budget, and the model decides how much of it to use.
+  if (modelId.startsWith("claude-")) {
+    return { includeThoughts: true, thinkingBudget: 1024 };
+  }
+  if (modelId === "gpt-oss-120b") {
+    return { includeThoughts: true, thinkingBudget: 8192 };
+  }
+  return undefined;
+}

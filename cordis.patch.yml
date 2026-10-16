@@ -1,0 +1,24 @@
+- id: credentials
+  name: '@deepseek-ai/dsh-credentials-local'
+  disabled: false
+# Keep official services and provider configuration; replace only web-tool registration.
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  config:
+    search: false
+    fetch: false
+- insert:
+    - id: yu-extensions
+      name: '@yu1745/dsh-extensions'
+    - id: yu-web-tools
+      name: '@yu1745/dsh-extensions/web-tools'
+      config:
+        root: true
+    - id: yu-web-search
+      name: '@yu1745/dsh-extensions/web-search'
+    - id: yu-web-reader
+      name: '@yu1745/dsh-extensions/web-reader'
+    - id: yu-quota
+      name: '@yu1745/dsh-extensions/quota'
+    - id: yu-codex-fast
+      name: '@yu1745/dsh-extensions/codex-fast'
