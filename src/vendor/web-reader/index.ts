@@ -202,8 +202,11 @@ async function ensureDisplay(): Promise<void> {
   // there is no Xvfb to run. Bail out before touching any X11 concept.
   if (process.platform !== "linux") return;
   if (process.env.DSH_WEBREADER_NO_XVFB === "1") return;
-  // An explicitly working DISPLAY (including a forwarded one) wins.
-  if (process.env.DISPLAY && await displayWorks(process.env.DISPLAY)) return;
+  // By default, prefer Xvfb to isolate the browser completely from the user desktop,
+  // preventing headed windows from flashing or stealing focus. Set DSH_WEBREADER_VISIBLE=1
+  // to intentionally display on the host desktop.
+  const forceHostDisplay = /^(1|true|yes)$/i.test(process.env.DSH_WEBREADER_VISIBLE || "");
+  if (forceHostDisplay && process.env.DISPLAY && await displayWorks(process.env.DISPLAY)) return;
 
   if (virtualDisplay) {
     // Validate the actual connection; a socket may survive a crashed X server.
