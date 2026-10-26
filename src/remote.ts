@@ -1,8 +1,48 @@
 import { z } from "zod";
 import { createTypertRemoteInfo } from "@deepseek-ai/dsh-typert-protocol";
+function speedParam(name: string, create: () => any) {
+  const codec = {
+    mode: "strict",
+    typeSymbol: `@yu1745/dsh-extensions#Speed-${name}`,
+    create,
+  };
+  return { name, source: "json", codec, strictCodec: codec };
+}
+const speedResult = {
+  mode: "strict",
+  typeSymbol: "@yu1745/dsh-extensions#SpeedResult",
+  create: () => z.object({ mode: z.enum(["standard", "fast", "ultrafast"]) }),
+};
 export const remoteInfo = createTypertRemoteInfo({
   package: "@yu1745/dsh-extensions",
   methods: {
+    "yuQuota/speed": {
+      service: "yuQuota",
+      invocation: { kind: "direct" },
+      parameters: [
+        speedParam("sessionId", () =>
+          z
+            .string()
+            .regex(/^[a-zA-Z0-9_-]+$/)
+            .max(200),
+        ),
+      ],
+      result: speedResult,
+    },
+    "yuQuota/setFast": {
+      service: "yuQuota",
+      invocation: { kind: "direct" },
+      parameters: [
+        speedParam("sessionId", () =>
+          z
+            .string()
+            .regex(/^[a-zA-Z0-9_-]+$/)
+            .max(200),
+        ),
+        speedParam("enabled", () => z.boolean()),
+      ],
+      result: speedResult,
+    },
     "yuQuota/snapshot": {
       service: "yuQuota",
       invocation: { kind: "direct" },

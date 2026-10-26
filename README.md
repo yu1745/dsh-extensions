@@ -115,3 +115,5 @@ dsh plugin --profile web remove @yu1745/dsh-extensions
 ```
 
 停用或卸载整个 bundle 会恢复官方工具配置和 Codex 适配层方法。DSH 的原生子代理插件继续使用。
+
+选中 OpenAI Codex 模型时，输入框底部显示圆角闪电开关，点击切换当前会话 Fast 模式；点亮表示加速已开启。`/fast`、`/ultrafast` 和 `/codex-speed` 命令继续可用，并与开关共用会话设置。

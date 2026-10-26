@@ -521,3 +521,16 @@ test("Codex search does not consume the API key configured for Decisions", async
     else process.env.OPENAI_API_KEY = before;
   }
 });
+
+test("Fast dock API shares command state and sets an explicit session mode", async () => {
+  const { Quota } = await import("../lib/quota.js");
+  const api = Object.create(Quota.prototype);
+  setSpeed("dock-session", "ultrafast");
+  assert.deepEqual(api.speed("dock-session"), { mode: "ultrafast" });
+  assert.deepEqual(api.setFast("dock-session", false), { mode: "standard" });
+  assert.equal(speedOf("dock-session"), "standard");
+  assert.deepEqual(api.setFast("dock-session", true), { mode: "fast" });
+  assert.deepEqual(api.setFast("dock-session", true), { mode: "fast" });
+  setSpeed("dock-session", "standard");
+  assert.deepEqual(api.speed("dock-session"), { mode: "standard" });
+});
