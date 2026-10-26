@@ -75,7 +75,7 @@ export function Panel({ api }: { api: any }) {
     [busy, setBusy] = useState(false),
     [prefs, setPrefs] = useState<any>(null),
     [notice, setNotice] = useState(""),
-    [range, setRange] = useState<ChartRange>("7d");
+    [range, setRange] = useState<ChartRange>("24h");
   async function reload() {
     setBusy(true);
     try {
