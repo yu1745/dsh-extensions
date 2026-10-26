@@ -73,6 +73,7 @@ CodeBuddy 从账号的 `/v3/config` 获取模型目录并缓存，发现失败�
 - 网页判断通过 PiAI 的通用 `Models.classify` 调用。默认 `typesafe / jev-latest`，也支持 `openai / gpt-6-luna` 和 OpenRouter `/api/alpha/decisions` 的任意可用模型 ID，例如 `microsoft/microsoft-decision-1`。
 - OpenAI Decisions 需要 `OPENAI_API_KEY`，不能使用 Codex OAuth；另外两类使用 `TYPESAFE_API_KEY` 和 `OPENROUTER_API_KEY`。
 - `/fast` 和 `/ultrafast` 分别请求 `priority` 和 `ultrafast` service tier。它们只影响当前会话以后的 Codex 请求；已创建的子会话保留各自快照，实际可用性由模型和账户决定。
+- 每轮工作结束后，在操作行上方追加一行灰色的用时（例如 `Worked for 1m 20s`），取本轮开始与结束事件的时间差。仅在本轮正常完成时显示，中断、失败、超时和取消不显示。格式与 Codex CLI 一致：不补零（`1m 1s`）、不足 1 秒显示 `<1s`。
 
 在插件页分别停用 `yu-web-search` 或 `yu-web-reader` 时，恢复对应的 DSH 内置工具。标准、PTC 和 Creator 预设采用相同规则；最小预设保留原来的工具范围。组合胶水行 `yu-extensions` 和 `yu-web-tools` 随整个包启停。
 

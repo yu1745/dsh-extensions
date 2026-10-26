@@ -6,6 +6,7 @@ import React, { useState, useEffect, useSyncExternalStore } from "react";
 import { remoteInfo } from "./remote.js";
 import { HistoryChart, type ChartRange } from "./quota-chart.js";
 import { styles } from "./quota-styles.js";
+import { TurnElapsed } from "./turn-elapsed.js";
 const ID = "@yu1745/dsh-extensions";
 const labels: any = {
   deepseek: "DeepSeek",
@@ -958,6 +959,18 @@ export async function apply(ctx: any) {
               }),
             },
             SessionCostDock,
+          ),
+        ),
+      );
+      ctx.effect(() =>
+        ctx.slots.inject("conversation.chat.turnTail", () =>
+          ctx.slots.register(
+            {
+              name: "conversation.chat.turnTail",
+              id: "yu-worked-for",
+              order: 30,
+            },
+            TurnElapsed,
           ),
         ),
       );

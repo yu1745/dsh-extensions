@@ -22,6 +22,7 @@ const nodeBuild = await build({
     costs: "src/costs.ts",
     classifiers: "src/classifiers.ts",
     "speed-context": "src/speed-context.ts",
+    "turn-elapsed-format": "src/turn-elapsed-format.ts",
     "search-context": "src/search-context.ts",
     "adapter-speed": "src/adapter-speed.ts",
   },
