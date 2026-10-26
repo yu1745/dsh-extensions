@@ -20,6 +20,128 @@ const money = (n: number) =>
     minimumFractionDigits: 2,
     maximumFractionDigits: 6,
   }).format(n);
+const costMoney = (n: number) =>
+  n >= 0.01
+    ? new Intl.NumberFormat("en-US", {
+        style: "currency",
+        currency: "USD",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4,
+      }).format(n)
+    : money(n);
+const cny = (n: number) =>
+  new Intl.NumberFormat("zh-CN", {
+    style: "currency",
+    currency: "CNY",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 6,
+  }).format(n);
+const costCny = (n: number) =>
+  n >= 0.01
+    ? new Intl.NumberFormat("zh-CN", {
+        style: "currency",
+        currency: "CNY",
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 4,
+      }).format(n)
+    : cny(n);
+function currencyText(currency: string, n: number, compact = false) {
+  if (currency === "CNY") return compact ? costCny(n) : cny(n);
+  return compact ? costMoney(n) : money(n);
+}
+function amountsText(amounts: any, compact = false) {
+  return Object.entries(amounts ?? {})
+    .filter(([, value]) => typeof value === "number" && value !== 0)
+    .map(([currency, value]) =>
+      currencyText(currency, value as number, compact),
+    )
+    .join(" + ");
+}
+/** Current snapshots carry per-currency buckets; older rows only carry USD. */
+function sessionAmounts(session: any, total = false) {
+  const amounts = session?.[total ? "totalAmounts" : "amounts"];
+  if (amounts) return amounts;
+  const usd = session?.[total ? "totalUsd" : "usd"];
+  return typeof usd === "number" && usd !== 0 ? { USD: usd } : {};
+}
+function sessionParts(session: any, total = false) {
+  return session?.[total ? "totalParts" : "parts"] ?? {};
+}
+const costTipStyles = `
+.yu-cost-dock { position: relative; display: inline-flex; align-items: center; min-width: 0; }
+.yu-cost-tip {
+  display: none;
+  position: absolute;
+  left: 0;
+  bottom: calc(100% + 6px);
+  z-index: 1000;
+  box-sizing: border-box;
+  min-width: 200px;
+  padding: 9px 11px;
+  border: .5px solid var(--dsw-alias-border-l2, rgba(0,0,0,.12));
+  border-radius: 10px;
+  background: var(--dsw-specific-menu, var(--dsw-alias-bg-base, #fff));
+  box-shadow: var(--dsw-elevation-panel, 0 8px 24px rgba(0,0,0,.14));
+  color: var(--dsw-alias-label-primary, inherit);
+  font-size: 12px;
+  line-height: 1.6;
+  text-align: left;
+  white-space: nowrap;
+  pointer-events: none;
+}
+.yu-cost-dock:hover .yu-cost-tip,
+.yu-cost-dock:focus-within .yu-cost-tip { display: block; }
+.yu-cost-tip-title { display: block; margin-bottom: 4px; color: var(--dsw-alias-label-tertiary, inherit); }
+.yu-cost-tip-block { display: block; }
+.yu-cost-tip-block + .yu-cost-tip-block {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: .5px solid var(--dsw-alias-border-l2, rgba(0,0,0,.1));
+}
+.yu-cost-tip-currency { display: block; color: var(--dsw-alias-label-tertiary, inherit); }
+.yu-cost-tip-row { display: flex; justify-content: space-between; gap: 18px; }
+.yu-cost-tip-row > span:first-child { color: var(--dsw-alias-label-secondary, inherit); }
+.yu-cost-tip-total {
+  margin-top: 3px;
+  padding-top: 3px;
+  border-top: .5px dashed var(--dsw-alias-border-l2, rgba(0,0,0,.15));
+  font-weight: 600;
+}
+.yu-cost-tip-note { display: block; margin-top: 5px; color: var(--dsw-alias-label-tertiary, inherit); }
+`;
+function CostTipRow({
+  label,
+  value,
+  total = false,
+}: {
+  label: string;
+  value: string;
+  total?: boolean;
+}) {
+  return (
+    <span
+      className={
+        total ? "yu-cost-tip-row yu-cost-tip-total" : "yu-cost-tip-row"
+      }
+    >
+      <span>{label}</span>
+      <span>{value}</span>
+    </span>
+  );
+}
+const dockButtonStyle: any = {
+  font: "inherit",
+  fontSize: 12,
+  color: "inherit",
+  background: "transparent",
+  border: "none",
+  cursor: "pointer",
+  padding: "4px 8px",
+  opacity: 0.75,
+  textAlign: "left",
+  whiteSpace: "normal",
+  overflowWrap: "anywhere",
+};
 function series(payload: any): any[] {
   if (!payload) return [];
   if (payload.currency)
@@ -117,7 +239,7 @@ export function Panel({ api }: { api: any }) {
         </button>
       </div>
       <p className="yu-muted">
-        后台每分钟刷新 · 费用以美元显示 · 历史保留 30 天
+        后台每分钟刷新 · DeepSeek 官方人民币、其余提供方美元 · 历史保留 30 天
       </p>
       {error && (
         <p role="alert" className="yu-warning">
@@ -287,7 +409,8 @@ export function Panel({ api }: { api: any }) {
           )}
           <h3>本机与子代理费用</h3>
           <p className="yu-muted">
-            按提供方用量和美元费率估算。总计包含该会话的全部子代理。
+            按提供方用量和官方费率估算：DeepSeek
+            官方使用人民币价，其余提供方使用美元价；不做汇率换算。总计包含该会话的全部子代理。
           </p>
           {data.sessions?.length ? (
             <table className="yu-table">
@@ -306,7 +429,8 @@ export function Panel({ api }: { api: any }) {
                       {s.sessionId.slice(-12)}
                     </td>
                     <td>
-                      {money(s.usd)} / {money(s.totalUsd)}
+                      {amountsText(sessionAmounts(s)) || "—"} /{" "}
+                      {amountsText(sessionAmounts(s, true)) || "—"}
                     </td>
                     <td>{s.totalUnknown || "—"}</td>
                   </tr>
@@ -422,31 +546,181 @@ function QuotaDock({
       : model.current?.provider;
   const item = data?.providers?.[provider];
   const quotas = series(item?.payload);
+  const quotaText = (quota: any) =>
+    quota.unit === "%"
+      ? `${quota.name} 剩余 ${quota.value.toFixed(1)}%`
+      : quota.unit === "USD"
+        ? money(quota.value)
+        : quota.unit === "CNY"
+          ? cny(quota.value)
+          : `${quota.value.toFixed(1)} ${quota.unit}`;
   const text = quotas.length
-    ? `${labels[provider]} ${quotas.map((quota: any) => (quota.unit === "%" ? `${quota.name} 剩余 ${quota.value.toFixed(1)}%` : quota.unit === "USD" ? money(quota.value) : `${quota.value.toFixed(1)} ${quota.unit}`)).join(" · ")}`
+    ? `${labels[provider]} ${quotas.map(quotaText).join(" · ")}`
     : (labels[provider] ?? "");
   return (
     <button
       type="button"
       onClick={open}
-      title="打开余额、余量曲线和美元费用"
-      style={{
-        font: "inherit",
-        fontSize: 12,
-        color: "inherit",
-        background: "transparent",
-        border: "none",
-        cursor: "pointer",
-        padding: "4px 8px",
-        opacity: 0.75,
-        textAlign: "left",
-        whiteSpace: "normal",
-        overflowWrap: "anywhere",
-      }}
+      title="打开余额、余量曲线和费用明细"
+      style={dockButtonStyle}
     >
       额度与费用{text ? ` · ${text}` : ""}
       {item?.error ? " · 更新失败" : ""}
     </button>
+  );
+}
+function SessionCostDock({
+  api,
+  sessionId,
+  open,
+}: {
+  api: any;
+  sessionId: string;
+  open: () => void;
+}) {
+  const [session, setSession] = useState<any>(null);
+  const [loaded, setLoaded] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    const read = () =>
+      api
+        .snapshot({})
+        .then((r: any) => {
+          if (!alive || !r.ok) return;
+          setSession(
+            r.value?.sessions?.find(
+              (row: any) => row.sessionId === sessionId,
+            ) ?? null,
+          );
+          setLoaded(true);
+        })
+        .catch(() => {});
+    void read();
+    const timer = setInterval(read, 20000);
+    const onVisibility = () => {
+      if (document.visibilityState === "visible") void read();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [api, sessionId]);
+  const own = sessionAmounts(session);
+  const total = sessionAmounts(session, true);
+  const totalParts = sessionParts(session, true);
+  const subagentAmounts: Record<string, number> = {};
+  for (const currency of new Set([
+    ...Object.keys(own),
+    ...Object.keys(total),
+  ])) {
+    const difference = (total[currency] ?? 0) - (own[currency] ?? 0);
+    if (difference > 1e-12) subagentAmounts[currency] = difference;
+  }
+  const subagents = Object.keys(subagentAmounts).length > 0;
+  const requests = session?.requests ?? 0;
+  const unknown = session?.totalUnknown ?? 0;
+  const totalText = amountsText(total, true);
+  const ownText = amountsText(own) || "—";
+  const subagentText = amountsText(subagentAmounts) || "—";
+  const label = !loaded
+    ? "本会话计费…"
+    : requests === 0
+      ? "本会话计费 —"
+      : totalText
+        ? `本会话计费 ${totalText}${subagents ? " · 含子代理" : ""}${unknown > 0 ? ` · ${unknown} 未知` : ""}`
+        : `本会话计费 —${unknown > 0 ? ` · ${unknown} 未知` : ""}`;
+  const title = [
+    `本会话自身 ${ownText}`,
+    subagents ? `子代理 ${subagentText}` : "",
+    `自身 ${requests} 次请求`,
+    unknown > 0 ? `${unknown} 次请求价格未知` : "",
+    "点击打开额度与费用",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+  const currencyBlocks = [
+    ...new Set([...Object.keys(total), ...Object.keys(totalParts)]),
+  ]
+    .map((currency) => ({
+      currency,
+      amount: total[currency] ?? 0,
+      parts: totalParts[currency],
+    }))
+    .filter(
+      ({ amount, parts }) =>
+        amount !== 0 ||
+        Boolean(
+          parts &&
+            [parts.cacheRead, parts.input, parts.output, parts.cacheWrite].some(
+              (value) => value !== 0,
+            ),
+        ),
+    );
+  return (
+    <span className="yu-cost-dock">
+      <style>{costTipStyles}</style>
+      <button
+        type="button"
+        onClick={open}
+        aria-label={title}
+        style={dockButtonStyle}
+      >
+        {label}
+      </button>
+      <span className="yu-cost-tip" role="tooltip">
+        <span className="yu-cost-tip-title">
+          本会话计费{subagents ? "（含子代理）" : ""}
+        </span>
+        {currencyBlocks.length ? (
+          currencyBlocks.map(({ currency, amount, parts }) => (
+            <span className="yu-cost-tip-block" key={currency}>
+              {currencyBlocks.length > 1 ? (
+                <span className="yu-cost-tip-currency">{currency}</span>
+              ) : null}
+              {parts ? (
+                <>
+                  <CostTipRow
+                    label="缓存读"
+                    value={currencyText(currency, parts.cacheRead, true)}
+                  />
+                  <CostTipRow
+                    label="输入"
+                    value={currencyText(currency, parts.input, true)}
+                  />
+                  <CostTipRow
+                    label="输出"
+                    value={currencyText(currency, parts.output, true)}
+                  />
+                  {parts.cacheWrite > 0 ? (
+                    <CostTipRow
+                      label="缓存写"
+                      value={currencyText(currency, parts.cacheWrite, true)}
+                    />
+                  ) : null}
+                </>
+              ) : null}
+              <CostTipRow
+                label={parts ? "合计" : "费用"}
+                value={currencyText(currency, amount, true)}
+                total
+              />
+            </span>
+          ))
+        ) : (
+          <span className="yu-cost-tip-note">暂无计费记录</span>
+        )}
+        {subagents ? (
+          <span className="yu-cost-tip-note">其中子代理 {subagentText}</span>
+        ) : null}
+        <span className="yu-cost-tip-note">
+          {requests} 次请求
+          {unknown > 0 ? ` · ${unknown} 个未知价格` : ""}
+        </span>
+        <span className="yu-cost-tip-note">点击打开额度与费用</span>
+      </span>
+    </span>
   );
 }
 export const inject = [
@@ -540,6 +814,23 @@ export async function apply(ctx: any) {
         ),
       );
       ctx.effect(() =>
+        ctx.slots.inject("conversation.composer.dock", () =>
+          ctx.slots.register(
+            {
+              name: "conversation.composer.dock",
+              id: "yu-session-cost",
+              order: 95,
+              inject: (sessionId: string) => ({
+                api,
+                sessionId,
+                open: () => ctx.sidebarRight.openTabIn(sessionId, "yu-quota"),
+              }),
+            },
+            SessionCostDock,
+          ),
+        ),
+      );
+      ctx.effect(() =>
         ctx.sidebarRightTabs.register({
           id: ID,
           kind: "yu-quota",
@@ -550,7 +841,7 @@ export async function apply(ctx: any) {
               id: "quota",
               order: 90,
               title: () => "额度与费用",
-              description: () => "查看余额、余量曲线和美元费用",
+              description: () => "查看余额、余量曲线和本机费用",
             },
           ],
         }),

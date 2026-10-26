@@ -5,40 +5,79 @@ import { join } from "node:path";
 import { dataDir, readJson, writeJson } from "./state.js";
 import { speedOf } from "./speed-context.js";
 
-/** USD per million tokens, from DeepSeek's official USD rate card (2026-10-16). */
-export function deepseekRates(model: string, time: number) {
-  const date = new Date(time),
-    hour = date.getUTCHours(),
+/**
+ * DeepSeek's exclusive billing currency is CNY unless a caller explicitly
+ * asks for the USD card; official rows are never converted by exchange rate.
+ */
+export function billingCurrency(provider: string): "USD" | "CNY" {
+  return provider === "deepseek-official" || provider === "deepseek"
+    ? "CNY"
+    : "USD";
+}
+function deepseekPeak(time: number, currency: "USD" | "CNY") {
+  // DeepSeek publishes USD peaks in UTC and CNY peaks in Beijing time; China
+  // has no DST, so a fixed +8h shift is exact. The published cards exempt
+  // Chinese statutory holidays; like the existing USD estimate this table
+  // follows the weekly window only.
+  const date = new Date(currency === "CNY" ? time + 8 * 3600000 : time);
+  const hour = date.getUTCHours(),
     day = date.getUTCDay();
-  const peak =
+  return (
     day >= 1 &&
     day <= 5 &&
-    ((hour >= 1 && hour < 4) || (hour >= 6 && hour < 10));
+    (currency === "CNY"
+      ? (hour >= 9 && hour < 12) || (hour >= 14 && hour < 18)
+      : (hour >= 1 && hour < 4) || (hour >= 6 && hour < 10))
+  );
+}
+/** Per-million-token rates from DeepSeek's official card (2026-10-16). */
+export function deepseekRates(
+  model: string,
+  time: number,
+  currency: "USD" | "CNY" = "USD",
+) {
+  const peak = deepseekPeak(time, currency);
   const pro = /^deepseek-(?:v4(?:\.\d+)?-)?pro$/i.test(model);
   if (
     !pro &&
     !/^deepseek-(?:v4(?:\.\d+)?-)?flash(?:-vision-exp)?$/i.test(model)
   )
     return undefined;
-  const rates = pro
-    ? { input: 0.66, output: 1.98, cacheRead: 0.022, cacheWrite: 0 }
-    : { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 };
+  const rates =
+    currency === "CNY"
+      ? pro
+        ? { input: 4.5, output: 13.5, cacheRead: 0.15, cacheWrite: 0 }
+        : { input: 1, output: 4, cacheRead: 0.02, cacheWrite: 0 }
+      : pro
+        ? { input: 0.66, output: 1.98, cacheRead: 0.022, cacheWrite: 0 }
+        : { input: 0.15, output: 0.6, cacheRead: 0.003, cacheWrite: 0 };
   return Object.fromEntries(
     Object.entries(rates).map(([key, value]) => [key, value * (peak ? 2 : 1)]),
   );
 }
 
-export function priceUsage(
+export type CostParts = {
+  cacheRead: number;
+  input: number;
+  output: number;
+  cacheWrite: number;
+};
+export function emptyCostParts(): CostParts {
+  return { cacheRead: 0, input: 0, output: 0, cacheWrite: 0 };
+}
+/** Price one usage record and keep the per-token-category subtotals. */
+export function priceBreakdown(
   provider: string,
   model: string,
   usage: any,
   time: number,
   ratesOverride?: any,
-) {
+  currency: "USD" | "CNY" = billingCurrency(provider),
+): { amount: number; parts: CostParts } | null {
   let rate =
     ratesOverride ??
     (["deepseek", "deepseek-official"].includes(provider)
-      ? deepseekRates(model, time)
+      ? deepseekRates(model, time, currency)
       : getBuiltinModels(provider)?.find((m: any) => m.id === model)?.cost);
   if (
     !rate ||
@@ -66,12 +105,28 @@ export function priceUsage(
   ];
   if (!rates.every((n) => Number.isFinite(n) && n >= 0)) return null;
   // Both DSH adapters report uncached input separately from cache read/write.
+  const parts = {
+    input: (input * rates[0]) / 1e6,
+    output: (output * rates[1]) / 1e6,
+    cacheRead: (read * rates[2]) / 1e6,
+    cacheWrite: (write * rates[3]) / 1e6,
+  };
+  return {
+    amount: parts.input + parts.output + parts.cacheRead + parts.cacheWrite,
+    parts,
+  };
+}
+export function priceUsage(
+  provider: string,
+  model: string,
+  usage: any,
+  time: number,
+  ratesOverride?: any,
+  currency: "USD" | "CNY" = billingCurrency(provider),
+) {
   return (
-    (input * rates[0] +
-      output * rates[1] +
-      read * rates[2] +
-      write * rates[3]) /
-    1e6
+    priceBreakdown(provider, model, usage, time, ratesOverride, currency)
+      ?.amount ?? null
   );
 }
 
@@ -110,24 +165,160 @@ export function costRows() {
   }
 }
 
+/**
+ * Trust stored category parts only when they are finite and non-negative, then
+ * scale them to the recorded amount so a rate override or tier cannot make the
+ * breakdown disagree with the total.
+ */
+export function scaleCostParts(
+  parts: any,
+  amount: number | null,
+): CostParts | null {
+  if (!parts || amount === null) return null;
+  const result = emptyCostParts();
+  for (const key of Object.keys(result) as (keyof CostParts)[]) {
+    const value = parts[key];
+    if (typeof value !== "number" || !Number.isFinite(value) || value < 0)
+      return null;
+    result[key] = value;
+  }
+  const sum =
+    result.input + result.output + result.cacheRead + result.cacheWrite;
+  if (!Number.isFinite(sum) || sum <= 0) return null;
+  const ratio = amount / sum;
+  for (const key of Object.keys(result) as (keyof CostParts)[])
+    result[key] *= ratio;
+  return result;
+}
+/**
+ * Prefer stored category parts; otherwise re-price the row's stored usage with
+ * the requested currency and scale that split to the recorded amount. This
+ * also backfills rows written by an earlier CNY build before parts existed.
+ */
+function rowParts(
+  row: any,
+  amount: number | null,
+  currency: "USD" | "CNY",
+): CostParts | null {
+  const stored = scaleCostParts(row.parts, amount);
+  if (stored) return stored;
+  if (amount === null || !row.usage) return null;
+  const priced = priceBreakdown(
+    row.provider,
+    row.model,
+    row.usage,
+    row.startedAt ?? Date.now(),
+    undefined,
+    currency,
+  );
+  return priced ? scaleCostParts(priced.parts, amount) : null;
+}
+/**
+ * Resolve one ledger row into an amount, billing currency and category parts.
+ * Current rows carry all three. Legacy rows predate the CNY card: DeepSeek
+ * official rows are re-priced from their stored usage with the exact CNY card
+ * (never an exchange rate), while every other legacy row keeps its USD amount
+ * and gets a category split scaled to that amount.
+ */
+export function normalizeCost(row: any): {
+  amount: number | null;
+  currency: "USD" | "CNY";
+  parts: CostParts | null;
+} {
+  if (row.currency === "USD" || row.currency === "CNY") {
+    const amount = typeof row.amount === "number" ? row.amount : null;
+    return {
+      amount,
+      currency: row.currency,
+      parts: rowParts(row, amount, row.currency),
+    };
+  }
+  if (row.amount !== undefined) {
+    const amount = typeof row.amount === "number" ? row.amount : null;
+    return {
+      amount,
+      currency: "USD",
+      parts: rowParts(row, amount, "USD"),
+    };
+  }
+  const time = row.startedAt ?? Date.now();
+  if (
+    row.usage &&
+    typeof row.usd === "number" &&
+    billingCurrency(row.provider) === "CNY"
+  ) {
+    const priced = priceBreakdown(
+      row.provider,
+      row.model,
+      row.usage,
+      time,
+      undefined,
+      "CNY",
+    );
+    return {
+      amount: priced?.amount ?? null,
+      currency: "CNY",
+      parts: priced?.parts ?? null,
+    };
+  }
+  const amount = typeof row.usd === "number" ? row.usd : null;
+  const priced =
+    amount !== null && row.usage
+      ? priceBreakdown(
+          row.provider,
+          row.model,
+          row.usage,
+          time,
+          undefined,
+          "USD",
+        )
+      : null;
+  return {
+    amount,
+    currency: "USD",
+    parts: priced ? scaleCostParts(priced.parts, amount) : null,
+  };
+}
 export function aggregateCosts(
   rows: any[],
   parents: Record<string, string> = {},
 ) {
   const sessions: any = {};
   for (const row of rows) {
+    const { amount, currency, parts } = normalizeCost(row);
     const session = (sessions[row.sessionId] ??= {
       sessionId: row.sessionId,
+      amounts: {},
+      totalAmounts: {},
+      parts: {},
+      totalParts: {},
       usd: 0,
       unknown: 0,
       requests: 0,
       parentSessionId: parents[row.sessionId],
     });
     session.requests++;
-    if (row.usd === null) session.unknown++;
-    else session.usd += row.usd;
+    if (amount === null) session.unknown++;
+    else {
+      session.amounts[currency] = (session.amounts[currency] ?? 0) + amount;
+      if (currency === "USD") session.usd += amount;
+      if (parts) {
+        const bucket = (session.parts[currency] ??= emptyCostParts());
+        bucket.cacheRead += parts.cacheRead;
+        bucket.input += parts.input;
+        bucket.output += parts.output;
+        bucket.cacheWrite += parts.cacheWrite;
+      }
+    }
   }
   for (const session of Object.values(sessions) as any[]) {
+    session.totalAmounts = { ...session.amounts };
+    session.totalParts = Object.fromEntries(
+      Object.entries(session.parts).map(([currency, parts]: any) => [
+        currency,
+        { ...parts },
+      ]),
+    );
     session.totalUsd = session.usd;
     session.totalUnknown = session.unknown;
   }
@@ -138,6 +329,10 @@ export function aggregateCosts(
       seen.add(parentId);
       const parent = (sessions[parentId] ??= {
         sessionId: parentId,
+        amounts: {},
+        totalAmounts: {},
+        parts: {},
+        totalParts: {},
         usd: 0,
         unknown: 0,
         requests: 0,
@@ -145,6 +340,19 @@ export function aggregateCosts(
         totalUnknown: 0,
         parentSessionId: parents[parentId],
       });
+      for (const [currency, amount] of Object.entries(session.amounts))
+        parent.totalAmounts[currency] =
+          (parent.totalAmounts[currency] ?? 0) + (amount as number);
+      for (const [currency, parts] of Object.entries(session.parts) as [
+        string,
+        CostParts,
+      ][]) {
+        const bucket = (parent.totalParts[currency] ??= emptyCostParts());
+        bucket.cacheRead += parts.cacheRead;
+        bucket.input += parts.input;
+        bucket.output += parts.output;
+        bucket.cacheWrite += parts.cacheWrite;
+      }
       parent.totalUsd += session.usd;
       parent.totalUnknown += session.unknown;
       parentId = parents[parentId];
@@ -161,6 +369,7 @@ export function installCosts(ctx: any, config: any = {}) {
         ? speedOf(options.sessionId)
         : undefined;
     const override = config.rates?.[options.provider]?.[options.model];
+    const currency = billingCurrency(options.provider);
     let usage: any;
     try {
       for await (const chunk of next()) {
@@ -168,7 +377,18 @@ export function installCosts(ctx: any, config: any = {}) {
         yield chunk;
       }
     } finally {
-      if (usage)
+      if (usage) {
+        const priced =
+          mode && mode !== "standard" && !override
+            ? null
+            : priceBreakdown(
+                options.provider,
+                options.model,
+                usage,
+                startedAt,
+                override,
+                currency,
+              );
         recordCost({
           id: randomUUID(),
           sessionId: options.sessionId ?? "auxiliary",
@@ -177,21 +397,17 @@ export function installCosts(ctx: any, config: any = {}) {
           startedAt,
           usage,
           ...(mode ? { requestedSpeed: mode } : {}),
-          usd:
-            mode && mode !== "standard" && !override
-              ? null
-              : priceUsage(
-                  options.provider,
-                  options.model,
-                  usage,
-                  startedAt,
-                  override,
-                ),
+          amount: priced?.amount ?? null,
+          parts: priced?.parts ?? null,
+          currency,
           source: "provider-usage-estimate",
         });
+      }
     }
   });
-  ctx.on("yu-extensions/tool-usage", (row: any) =>
+  ctx.on("yu-extensions/tool-usage", (row: any) => {
+    const cost = row.usage?.cost;
+    const amount = row.usage?.costUnknown ? null : (cost?.total ?? null);
     recordCost({
       id: randomUUID(),
       sessionId: row.sessionId ?? "auxiliary",
@@ -199,10 +415,19 @@ export function installCosts(ctx: any, config: any = {}) {
       model: row.model,
       startedAt: Date.now(),
       usage: row.usage,
-      usd: row.usage?.costUnknown ? null : (row.usage?.cost?.total ?? null),
+      amount,
+      parts: cost
+        ? {
+            cacheRead: cost.cacheRead ?? 0,
+            input: cost.input ?? 0,
+            output: cost.output ?? 0,
+            cacheWrite: cost.cacheWrite ?? 0,
+          }
+        : null,
+      currency: "USD",
       source: "classifier",
-    }),
-  );
+    });
+  });
   const knownParents = new Set<string>();
   const recordParent = (session: any) => {
     if (!session.header.parentSession || knownParents.has(session.id)) return;

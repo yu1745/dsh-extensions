@@ -5,9 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 const home = mkdtempSync(join(tmpdir(), "dsh-extensions-tests-"));
 process.env.DSH_HOME = home;
-const { deepseekRates, priceUsage, aggregateCosts } = await import(
-  "../lib/costs.js"
-);
+const {
+  deepseekRates,
+  priceUsage,
+  priceBreakdown,
+  aggregateCosts,
+  billingCurrency,
+  costRows,
+  installCosts,
+} = await import("../lib/costs.js");
 const { appendHistory, pointsFromPayload, historyKey } = await import(
   "../lib/quota.js"
 );
@@ -39,8 +45,9 @@ const { Context } = await import("@deepseek-ai/cordis");
 const { assertSupportedJsonSchema } = await import("@deepseek-ai/dsh-tools");
 
 test.after(() => rmSync(home, { recursive: true, force: true }));
-test("DeepSeek uses exact USD rates and UTC weekday peak boundaries", () => {
-  const at = (day, h) => Date.UTC(2026, 9, day, h);
+test("DeepSeek uses exact USD and CNY cards with their own peak boundaries", () => {
+  const at = (day, h, minute = 0) => Date.UTC(2026, 9, day, h, minute);
+  // USD card peaks in UTC.
   assert.equal(deepseekRates("deepseek-flash", at(16, 0)).input, 0.15);
   assert.equal(deepseekRates("deepseek-flash", at(16, 1)).input, 0.3);
   assert.equal(deepseekRates("deepseek-flash", at(16, 4)).input, 0.15);
@@ -49,10 +56,56 @@ test("DeepSeek uses exact USD rates and UTC weekday peak boundaries", () => {
   assert.equal(deepseekRates("deepseek-v4-pro", at(16, 2)).input, 1.32);
   assert.equal(deepseekRates("deepseek-v4-pro", at(17, 2)).output, 1.98);
   assert.equal(deepseekRates("unknown", at(16, 2)), undefined);
+
+  // CNY card peaks in Beijing time: 09:00-12:00 and 14:00-18:00.
+  assert.deepEqual(deepseekRates("deepseek-flash", at(16, 0), "CNY"), {
+    input: 1,
+    output: 4,
+    cacheRead: 0.02,
+    cacheWrite: 0,
+  });
+  assert.equal(deepseekRates("deepseek-flash", at(16, 1), "CNY").input, 2);
+  assert.equal(deepseekRates("deepseek-flash", at(16, 4, 30), "CNY").input, 1);
+  assert.equal(deepseekRates("deepseek-flash", at(16, 6, 30), "CNY").input, 2);
+  assert.equal(deepseekRates("deepseek-flash", at(16, 10), "CNY").output, 4);
+  assert.equal(deepseekRates("deepseek-v4-pro", at(16, 2), "CNY").input, 9);
+  assert.equal(deepseekRates("deepseek-v4-pro", at(16, 2), "CNY").output, 27);
+  assert.equal(
+    deepseekRates("deepseek-v4-pro", at(16, 2), "CNY").cacheRead,
+    0.3,
+  );
+  // Saturday 10:00 Beijing is off-peak even though the UTC clock says 02:00.
+  assert.equal(deepseekRates("deepseek-flash", at(17, 2), "CNY").input, 1);
+  // Sunday 16:00 UTC is Monday 00:00 Beijing; Monday 01:00 UTC is 09:00.
+  assert.equal(deepseekRates("deepseek-flash", at(18, 16), "CNY").input, 1);
+  assert.equal(deepseekRates("deepseek-flash", at(19, 1), "CNY").input, 2);
+
   const usage = { inputTokens: 1e6, outputTokens: 1e6, cacheReadTokens: 1e6 };
+  assert.equal(billingCurrency("deepseek-official"), "CNY");
+  assert.equal(billingCurrency("openai-codex"), "USD");
   assert.equal(
     priceUsage("deepseek-official", "deepseek-flash", usage, at(16, 1)),
+    10.04,
+  );
+  assert.equal(
+    priceUsage(
+      "deepseek-official",
+      "deepseek-flash",
+      usage,
+      at(16, 1),
+      undefined,
+      "USD",
+    ),
     1.506,
+  );
+  assert.equal(
+    priceUsage("deepseek-official", "deepseek-flash", usage, at(16, 0)),
+    5.02,
+  );
+  assert.deepEqual(
+    priceBreakdown("deepseek-official", "deepseek-flash", usage, at(16, 0))
+      .parts,
+    { cacheRead: 0.02, input: 1, output: 4, cacheWrite: 0 },
   );
   assert.equal(priceUsage("unknown", "anything", usage, at(16, 1)), null);
 });
@@ -70,6 +123,134 @@ test("parent and nested child totals count each request once", () => {
   assert.equal(result.c.totalUsd, 5);
   assert.equal(result.g.totalUsd, 3);
   assert.equal(result.p.totalUnknown, 1);
+});
+test("mixed currencies stay in separate buckets and legacy DeepSeek rows use the CNY card", () => {
+  const result = Object.fromEntries(
+    aggregateCosts(
+      [
+        {
+          sessionId: "p",
+          amount: 0.5,
+          currency: "CNY",
+          parts: { cacheRead: 0.2, input: 0.1, output: 0.2, cacheWrite: 0 },
+        },
+        {
+          sessionId: "c",
+          amount: 0.25,
+          currency: "USD",
+          parts: { cacheRead: 0.05, input: 0.1, output: 0.1, cacheWrite: 0 },
+        },
+        {
+          sessionId: "c",
+          amount: 0.1,
+          currency: "CNY",
+          parts: { cacheRead: 0.04, input: 0.02, output: 0.04, cacheWrite: 0 },
+        },
+      ],
+      { c: "p" },
+    ).map((row) => [row.sessionId, row]),
+  );
+  assert.deepEqual(result.p.amounts, { CNY: 0.5 });
+  assert.deepEqual(result.p.totalAmounts, { CNY: 0.6, USD: 0.25 });
+  assert.equal(result.p.usd, 0);
+  assert.equal(result.p.totalUsd, 0.25);
+  assert.deepEqual(result.c.totalAmounts, { CNY: 0.1, USD: 0.25 });
+  const near = (actual, expected) => Math.abs(actual - expected) < 1e-12;
+  assert.ok(near(result.p.totalParts.CNY.cacheRead, 0.24));
+  assert.ok(near(result.p.totalParts.CNY.input, 0.12));
+  assert.ok(near(result.p.totalParts.CNY.output, 0.24));
+  assert.ok(near(result.p.totalParts.USD.cacheRead, 0.05));
+  assert.ok(near(result.p.totalParts.USD.input, 0.1));
+  assert.ok(near(result.c.totalParts.CNY.input, 0.02));
+
+  // Legacy rows have no currency. DeepSeek official is re-priced with the
+  // exact CNY card at the request time; the stored USD number is not reused
+  // and no exchange rate is involved.
+  const usage = { inputTokens: 1e6, outputTokens: 0, cacheReadTokens: 0 };
+  const legacy = aggregateCosts([
+    {
+      sessionId: "d",
+      provider: "deepseek-official",
+      model: "deepseek-flash",
+      startedAt: Date.UTC(2026, 9, 16, 0),
+      usage,
+      usd: 0.15,
+    },
+  ])[0];
+  assert.deepEqual(legacy.amounts, { CNY: 1 });
+  assert.equal(legacy.usd, 0);
+  assert.deepEqual(legacy.parts.CNY, {
+    cacheRead: 0,
+    input: 1,
+    output: 0,
+    cacheWrite: 0,
+  });
+
+  const amountOnly = aggregateCosts([
+    {
+      sessionId: "n",
+      provider: "deepseek-official",
+      model: "deepseek-flash",
+      startedAt: Date.UTC(2026, 9, 16, 0),
+      usage,
+      amount: 1,
+      currency: "CNY",
+    },
+  ])[0];
+  assert.deepEqual(amountOnly.parts.CNY, {
+    cacheRead: 0,
+    input: 1,
+    output: 0,
+    cacheWrite: 0,
+  });
+
+  const usdLegacy = aggregateCosts([
+    { sessionId: "u", provider: "openai-codex", usd: 0.5 },
+  ])[0];
+  assert.deepEqual(usdLegacy.amounts, { USD: 0.5 });
+  assert.deepEqual(usdLegacy.parts, {});
+});
+test("llm ledger rows store the provider billing currency", async () => {
+  const handlers = {};
+  installCosts(
+    {
+      on: (name, handler) => {
+        handlers[name] = handler;
+      },
+    },
+    {},
+  );
+  const stream = handlers["llm/stream"];
+  const realNow = Date.now;
+  Date.now = () => Date.UTC(2026, 9, 16, 0);
+  try {
+    const read = async (sessionId, provider, model) => {
+      for await (const chunk of stream(
+        { sessionId, provider, model },
+        async function* () {
+          yield {
+            type: "usage",
+            usage: { inputTokens: 1000, outputTokens: 0, cacheReadTokens: 0 },
+          };
+        },
+      ))
+        void chunk;
+    };
+    await read("ledger-deepseek", "deepseek-official", "deepseek-flash");
+    await read("ledger-codex", "openai-codex", "gpt-5.6-luna");
+  } finally {
+    Date.now = realNow;
+  }
+  const rows = costRows();
+  const deepseek = rows.find((row) => row.sessionId === "ledger-deepseek");
+  assert.equal(deepseek.currency, "CNY");
+  assert.equal(deepseek.amount, 0.001);
+  assert.ok(Math.abs(deepseek.parts.input - 0.001) < 1e-15);
+  assert.equal(deepseek.parts.cacheRead, 0);
+  const codex = rows.find((row) => row.sessionId === "ledger-codex");
+  assert.equal(codex.currency, "USD");
+  assert.equal(codex.amount, 0.0002);
+  assert.ok(Math.abs(codex.parts.input - 0.0002) < 1e-15);
 });
 test("quota history records changes, reset changes and heartbeat, retaining last good data", () => {
   const now = Date.now();
