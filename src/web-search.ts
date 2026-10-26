@@ -89,11 +89,14 @@ export function apply(ctx: any, config: any) {
     };
     state.backend = backend;
   }
-  ctx.on("agent/created", attach);
-  ctx.on("agent/disposed", (agent: any) => {
+  // 这两个事件传的是 `{ agent, … }` 载荷，不是 agent 本身。
+  ctx.on("agent/created", ({ agent }: any) => {
+    attach(agent);
+  });
+  ctx.on("agent/disposed", async ({ agent }: any) => {
     const state = mounted.get(agent);
     mounted.delete(agent);
-    return state?.scope.dispose();
+    await state?.scope.dispose();
   });
   for (const agent of ctx.agents.list()) attach(agent);
   const unregisterCommand = ctx.commands.register({
