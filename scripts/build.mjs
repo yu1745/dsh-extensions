@@ -23,6 +23,7 @@ const nodeBuild = await build({
     classifiers: "src/classifiers.ts",
     "speed-context": "src/speed-context.ts",
     "turn-elapsed-format": "src/turn-elapsed-format.ts",
+    "prompt-sanitize": "src/prompt-sanitize.ts",
     "search-context": "src/search-context.ts",
     "adapter-speed": "src/adapter-speed.ts",
   },

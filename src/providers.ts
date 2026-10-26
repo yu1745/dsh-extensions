@@ -14,6 +14,7 @@ import {
 import { createAntigravityProvider } from "./antigravity-provider.js";
 import { refreshAntigravityToken } from "./vendor/antigravity/auth/oauth.js";
 import { providerRemoteInfo } from "./provider-remote.js";
+import { installPromptSanitizer } from "./prompt-sanitize.js";
 export const name = "yu-providers";
 export const inject = ["llm", "credentials", "authorization", "typert"];
 const ids = ["codebuddy", "antigravity"] as const;
@@ -354,6 +355,9 @@ export class Providers extends TypertRemoteService {
   }
 }
 export async function apply(ctx: any) {
+  // 只要本插件激活，就替本次组装出的提示词改名：CodeBuddy 的渠道校验会把
+  // 提示词里的 "DeepSeek Harness" 当成非官方客户端的特征（HTTP 400/11128）。
+  ctx.effect(() => installPromptSanitizer(ctx));
   const service = new Providers(ctx);
   service.ready = service.init();
   await service.ready;
