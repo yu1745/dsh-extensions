@@ -17,6 +17,8 @@ const nodeBuild = await build({
     "search-openai": "src/vendor/web-search/openai-search.ts",
     quota: "src/quota.ts",
     "codex-fast": "src/codex-fast.ts",
+    "model-fallback": "src/model-fallback.ts",
+    "fallback-state": "src/fallback-state.ts",
     costs: "src/costs.ts",
     classifiers: "src/classifiers.ts",
     "speed-context": "src/speed-context.ts",

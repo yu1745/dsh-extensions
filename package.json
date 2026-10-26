@@ -27,7 +27,8 @@
     "./codex-fast": "./lib/codex-fast.js",
     "./package.json": "./package.json",
     "./web-tools": "./lib/web-tools.js",
-    "./providers": "./lib/providers.js"
+    "./providers": "./lib/providers.js",
+    "./model-fallback": "./lib/model-fallback.js"
   },
   "dsh": {
     "bundle": {

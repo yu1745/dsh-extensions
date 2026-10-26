@@ -1,3 +1,4 @@
+import { installFallbackSettings } from "./fallback-panel.js";
 import { installModelMenu } from "./model-menu.js";
 import { ProviderPanel } from "./provider-panel.js";
 import { providerRemoteInfo } from "./provider-remote.js";
@@ -843,6 +844,7 @@ export const inject = [
 export async function apply(ctx: any) {
   installModelMenu(ctx);
   try {
+    await installFallbackSettings(ctx);
     await ctx.remote.$mount(remoteInfo);
     await ctx.remote.$mount(providerRemoteInfo);
     ctx.inject(["remote.yuQuota", "remote.commands"], (ctx: any) => {
