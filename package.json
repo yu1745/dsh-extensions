@@ -15,7 +15,8 @@
     "README.md",
     "LICENSE",
     "presets",
-    "NOTICE.md"
+    "NOTICE.md",
+    "no-workspace"
   ],
   "main": "./lib/index.js",
   "exports": {
@@ -28,7 +29,10 @@
     "./package.json": "./package.json",
     "./web-tools": "./lib/web-tools.js",
     "./providers": "./lib/providers.js",
-    "./model-fallback": "./lib/model-fallback.js"
+    "./model-fallback": "./lib/model-fallback.js",
+    "./no-workspace": "./lib/no-workspace.js",
+    "./no-workspace/locale/*.json": "./no-workspace/locale/*.json",
+    "./no-workspace/icon": "./no-workspace/icon.svg"
   },
   "dsh": {
     "bundle": {
@@ -44,7 +48,8 @@
         "@deepseek-ai/dsh-api-remotes",
         "@deepseek-ai/dsh-client-ui-sidebar-right",
         "@deepseek-ai/dsh-client-ui-model-selection",
-        "@deepseek-ai/dsh-client-ui-commands"
+        "@deepseek-ai/dsh-client-ui-commands",
+        "@deepseek-ai/dsh-client-ui-workspace"
       ],
       "platform": "web"
     }

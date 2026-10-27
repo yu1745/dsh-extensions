@@ -1,4 +1,5 @@
 import { installFallbackSettings } from "./fallback-panel.js";
+import { installNoWorkspace } from "./no-workspace-client.js";
 import { installModelMenu } from "./model-menu.js";
 import { ProviderPanel } from "./provider-panel.js";
 import { providerRemoteInfo } from "./provider-remote.js";
@@ -845,6 +846,7 @@ export const inject = [
 export async function apply(ctx: any) {
   installModelMenu(ctx);
   try {
+    await installNoWorkspace(ctx);
     await installFallbackSettings(ctx);
     await ctx.remote.$mount(remoteInfo);
     await ctx.remote.$mount(providerRemoteInfo);

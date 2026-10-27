@@ -29,3 +29,5 @@
       name: '@yu1745/dsh-extensions/codex-fast'
     - id: yu-model-fallback
       name: '@yu1745/dsh-extensions/model-fallback'
+    - id: yu-no-workspace
+      name: '@yu1745/dsh-extensions/no-workspace'
