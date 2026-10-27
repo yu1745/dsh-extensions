@@ -185,6 +185,12 @@ test("only quota / balance exhaustion triggers fallback, not transient 429s, aut
     { code: "ACCOUNT_QUOTA" },
     { code: "RATE_LIMIT", message: "usage_limit_reached" },
     { code: "HTTP", message: "余额不足" },
+    {
+      code: "RATE_LIMIT",
+      status: 429,
+      message:
+        '本轮运行失败429: {"code":"1308","message":"已达到 5 小时的使用上限。您的限额将在 2026-10-27 04:54:37 重置。"}',
+    },
   ])
     assert.equal(state.quotaFailure(f), true);
   for (const f of [
@@ -234,6 +240,21 @@ test("quota failure switches and retries on native recovery, preserving durable 
   assert.deepEqual(next, b);
   assert.deepEqual(h.agent.config, b);
   assert.deepEqual(h.events, [b]);
+});
+test("Chinese five-hour quota 429 advances the configured model queue", async () => {
+  const h = harness();
+  await h.request();
+  assert.deepEqual(
+    await h.fail({
+      code: "RATE_LIMIT",
+      status: 429,
+      message:
+        '{"code":"1308","message":"已达到 5 小时的使用上限。您的限额将在 2026-10-27 04:54:37 重置。"}',
+    }),
+    { kind: "retry" },
+  );
+  assert.deepEqual(h.selection.current, b);
+  assert.deepEqual(await h.request(), b);
 });
 test("all candidates exhausted stops fallback; a failure chain never cycles to already tried models", async () => {
   const h = harness();

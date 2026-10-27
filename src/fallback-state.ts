@@ -43,7 +43,7 @@ export function quotaFailure(failure: any) {
   return (
     ["QUOTA", "ACCOUNT_QUOTA"].includes(failure.code) ||
     isQuotaExceededError(String(failure.message ?? "")) ||
-    /(?:usage_limit_reached|insufficient_quota|exhausted.*(?:5.?h|weekly)|(?:5.?h|weekly).*limit|额度.{0,8}(?:耗尽|不足|用完)|余额不足)/i.test(
+    /(?:usage_limit_reached|insufficient_quota|exhausted.*(?:5.?h|weekly)|(?:5.?h|weekly).*limit|(?:已达到|达到).{0,12}(?:小时|周).{0,12}使用上限|额度.{0,8}(?:耗尽|不足|用完)|余额不足)/i.test(
       String(failure.message ?? ""),
     )
   );
