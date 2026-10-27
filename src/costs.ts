@@ -65,6 +65,28 @@ export type CostParts = {
 export function emptyCostParts(): CostParts {
   return { cacheRead: 0, input: 0, output: 0, cacheWrite: 0 };
 }
+/** Official Standard API card, USD / 1M tokens (2026-10-27).
+ * https://developers.openai.com/api/docs/models/gpt-6.1-terra
+ * Over 272K input tokens: input/cache rates double, output increases 1.5x.
+ * Fast and Ultrafast requests remain unknown until their tier is priced.
+ */
+const codexRates: Record<string, any> = {
+  "gpt-6.1-terra": {
+    input: 1,
+    output: 5,
+    cacheRead: 0.05,
+    cacheWrite: 1.25, // 30-minute retention; 12-hour writes cost $2.50.
+    tiers: [
+      {
+        inputTokensAbove: 272_000,
+        input: 2,
+        output: 7.5,
+        cacheRead: 0.1,
+        cacheWrite: 2.5,
+      },
+    ],
+  },
+};
 /** Price one usage record and keep the per-token-category subtotals. */
 export function priceBreakdown(
   provider: string,
@@ -78,7 +100,8 @@ export function priceBreakdown(
     ratesOverride ??
     (["deepseek", "deepseek-official"].includes(provider)
       ? deepseekRates(model, time, currency)
-      : getBuiltinModels(provider)?.find((m: any) => m.id === model)?.cost);
+      : ((provider === "openai-codex" ? codexRates[model] : undefined) ??
+        getBuiltinModels(provider)?.find((m: any) => m.id === model)?.cost));
   if (
     !rate ||
     (!ratesOverride &&

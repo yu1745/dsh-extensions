@@ -210,6 +210,46 @@ test("mixed currencies stay in separate buckets and legacy DeepSeek rows use the
   assert.deepEqual(usdLegacy.amounts, { USD: 0.5 });
   assert.deepEqual(usdLegacy.parts, {});
 });
+test("GPT-6.1 Terra uses the official Codex Standard API card and long-context tier", () => {
+  const at = Date.UTC(2026, 9, 27);
+  assert.deepEqual(
+    priceBreakdown(
+      "openai-codex",
+      "gpt-6.1-terra",
+      {
+        inputTokens: 1_000_000,
+        outputTokens: 1_000_000,
+        cacheReadTokens: 1_000_000,
+        cacheWriteTokens: 1_000_000,
+      },
+      at,
+    )?.parts,
+    { input: 2, output: 7.5, cacheRead: 0.1, cacheWrite: 2.5 },
+  );
+  assert.deepEqual(
+    priceBreakdown(
+      "openai-codex",
+      "gpt-6.1-terra",
+      {
+        inputTokens: 100_000,
+        outputTokens: 100_000,
+        cacheReadTokens: 100_000,
+        cacheWriteTokens: 50_000,
+      },
+      at,
+    )?.parts,
+    { input: 0.1, output: 0.5, cacheRead: 0.005, cacheWrite: 0.0625 },
+  );
+  assert.equal(
+    priceUsage(
+      "openai-codex",
+      "gpt-6-sol",
+      { inputTokens: 100_000, outputTokens: 100_000 },
+      at,
+    ),
+    1.2,
+  );
+});
 test("llm ledger rows store the provider billing currency", async () => {
   const handlers = {};
   installCosts(
