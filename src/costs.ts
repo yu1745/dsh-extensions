@@ -139,12 +139,23 @@ export function priceBreakdown(
     parts,
   };
 }
-/** Fast is 2x the applicable Standard API rates, including long context.
+/** Official model cards specify Fast at 2x applicable Standard API rates.
+ * https://developers.openai.com/api/docs/models/gpt-6-astra
+ * https://developers.openai.com/api/docs/models/gpt-6.1-sol
  * https://developers.openai.com/api/docs/models/gpt-6-sol
+ * https://developers.openai.com/api/docs/models/gpt-6.1-terra
+ * https://developers.openai.com/api/docs/models/gpt-6-luna
  * This estimates the requested tier; Codex subscription credits are separate.
  */
+const fastModels = new Set([
+  "gpt-6-astra",
+  "gpt-6.1-sol",
+  "gpt-6-sol",
+  "gpt-6.1-terra",
+  "gpt-6-luna",
+]);
 function fastEstimate(model: string, usage: any, time: number) {
-  if (model !== "gpt-6-sol" && model !== "gpt-6.1-terra") return null;
+  if (!fastModels.has(model)) return null;
   const standard = priceBreakdown("openai-codex", model, usage, time);
   if (!standard) return null;
   return {

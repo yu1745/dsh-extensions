@@ -330,6 +330,21 @@ test("Codex Fast requests use double Standard API rates, including historical un
   });
   setSpeed("terra-fast", "fast");
   assert.equal((await run("terra-fast", "gpt-6.1-terra")).amount, 1.21);
+  for (const [sessionId, model, expected] of [
+    ["sol61-fast", "gpt-6.1-sol", 2.42],
+    ["astra-fast", "gpt-6-astra", 12.2],
+    ["luna-fast", "gpt-6-luna", 0.122],
+  ]) {
+    setSpeed(sessionId, "fast");
+    const row = await run(sessionId, model);
+    assert.ok(Math.abs(row.amount - expected) < 1e-12, model);
+    assert.ok(
+      Math.abs(
+        normalizeCost({ ...row, amount: null, parts: null }).amount - expected,
+      ) < 1e-12,
+      `${model} historical Fast row`,
+    );
+  }
   setSpeed("sol-ultrafast", "ultrafast");
   assert.equal((await run("sol-ultrafast", "gpt-6-sol")).amount, null);
   assert.equal(
