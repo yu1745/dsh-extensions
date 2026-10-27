@@ -16,7 +16,8 @@
     "LICENSE",
     "presets",
     "NOTICE.md",
-    "no-workspace"
+    "no-workspace",
+    "openai-windows"
   ],
   "main": "./lib/index.js",
   "exports": {
@@ -30,6 +31,12 @@
     "./web-tools": "./lib/web-tools.js",
     "./providers": "./lib/providers.js",
     "./model-fallback": "./lib/model-fallback.js",
+    "./openai-windows": "./lib/openai-windows.js",
+    "./openai-window-compaction": "./lib/openai-window-compaction.js",
+    "./openai-windows/locale/*.json": "./openai-windows/locale/*.json",
+    "./openai-windows/icon": "./openai-windows/icon.svg",
+    "./openai-window-compaction/locale/*.json": "./openai-windows/locale/*.json",
+    "./openai-window-compaction/icon": "./openai-windows/icon.svg",
     "./no-workspace": "./lib/no-workspace.js",
     "./no-workspace/locale/*.json": "./no-workspace/locale/*.json",
     "./no-workspace/icon": "./no-workspace/icon.svg"
@@ -75,10 +82,14 @@
   },
   "devDependencies": {
     "@deepseek-ai/cordis": "~4.0.5-alpha.2",
+    "@deepseek-ai/dsh-compaction": "^0.2.1-alpha.4",
+    "@deepseek-ai/dsh-compaction-basic": "^0.2.1-alpha.4",
     "@deepseek-ai/dsh-credentials": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-llm": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-scope": "^0.2.1-alpha.4",
+    "@deepseek-ai/dsh-session-projection": "^0.2.1-alpha.4",
+    "@deepseek-ai/dsh-token-meter": "^0.2.1-alpha.4",
     "@deepseek-ai/dsh-tool-web": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-tools": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-typert-protocol": "0.2.1-alpha.4",
@@ -93,14 +104,18 @@
   },
   "peerDependencies": {
     "@deepseek-ai/cordis": "~4.0.5-alpha.2",
+    "@deepseek-ai/dsh-compaction": "0.2.1-alpha.4",
+    "@deepseek-ai/dsh-compaction-basic": "0.2.1-alpha.4",
+    "@deepseek-ai/dsh-session-projection": "0.2.1-alpha.4",
+    "@deepseek-ai/dsh-token-meter": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-credentials": "0.2.1-alpha.4",
+    "@deepseek-ai/dsh-llm": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-llm-pi-ai": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-scope": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-tool-web": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-tools": "0.2.1-alpha.4",
     "@deepseek-ai/dsh-typert-protocol": "0.2.1-alpha.4",
     "@deepseek-ai/schemastery": "~3.18.5-alpha.2",
-    "@earendil-works/pi-ai": "1.2.0",
-    "@deepseek-ai/dsh-llm": "0.2.1-alpha.4"
+    "@earendil-works/pi-ai": "1.2.0"
   }
 }

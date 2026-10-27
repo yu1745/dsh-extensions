@@ -10,7 +10,16 @@
   config:
     search: false
     fetch: false
+# Web presets provide isolated engines; headless uses the root engine below.
+- id: compaction-basic
+  name: '@deepseek-ai/dsh-compaction-basic'
+  disabled: true
 - insert:
+    - id: yu-openai-windows
+      name: '@yu1745/dsh-extensions/openai-windows'
+    - id: yu-window-compaction-root
+      name: '@yu1745/dsh-extensions/openai-window-compaction'
+      disabled: !!js "!!ctx.get('agentPresets')"
     - id: yu-extensions
       name: '@yu1745/dsh-extensions'
     - id: yu-web-tools

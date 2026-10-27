@@ -10,6 +10,7 @@
 | `yu-quota` | 五源额度、余额与历史曲线；Codex 跨设备账本；本机和原生子代理费用；底栏会话计费 |
 | `yu-codex-fast` | 会话级 `/fast`、`/ultrafast`、`/codex-speed`；子会话继承创建时快照 |
 | `yu-model-fallback` | 独立设置页配置单模型优先级；额度耗尽顺位回退，恢复后优先回到手动首选模型 |
+| `yu-openai-windows` | OpenAI 模型使用 notes/history 滚窗，不发摘要或远程压缩请求；其他模型沿用 DSH 基础 compact |
 | `yu-no-workspace` | 全局新对话默认使用独立目录，形式上显示“不在工作区工作”；每次创建真实子目录与注册工作区 |
 
 额度来源为 DeepSeek、GLM、MiniMax、OpenAI Codex、Antigravity。后台在 DSH 运行期间每分钟刷新，不依赖浏览器打开；同一个 DSH home 的多个进程共用轮询锁。
@@ -79,6 +80,34 @@ CodeBuddy 从账号的 `/v3/config` 获取模型目录并缓存，发现失败�
 - 每轮工作结束后，在操作行上方追加一行灰色的用时（例如 `Worked for 1m 20s`），取本轮开始与结束事件的时间差。仅在本轮正常完成时显示，中断、失败、超时和取消不显示。格式与 Codex CLI 一致：不补零（`1m 1s`）、不足 1 秒显示 `<1s`。
 
 在插件页分别停用 `yu-web-search` 或 `yu-web-reader` 时，恢复对应的 DSH 内置工具。标准、PTC 和 Creator 预设采用相同规则；最小预设保留原来的工具范围。组合胶水行 `yu-extensions` 和 `yu-web-tools` 随整个包启停。
+
+## OpenAI 滚动上下文窗口
+
+第一参考是 [Codex CLI 的 notes/history 实现](https://github.com/openai/codex/tree/aeb6b22c8bda5f4d4b6ab80ebd3ccdb3f47fb3ab/codex-rs/ext/history-notes) 与 token-budget 换窗流程，而不是 Pi 插件。标准、PTC、Creator 预设及 headless 的 compaction 服务使用相同的路由分派：只对 `openai` / `openai-codex` 提供方下的 OpenAI 模型启用；DeepSeek、Anthropic、Antigravity 等仍直接调用 DSH 原始 `BasicCompactionEngine`，不增加窗口工具或提示词。最小预设原本没有 compaction，保持不变。
+
+- 模型获得 `notes_*`、`history_*`、`get_context_remaining` 和 `new_context`。DSH 使用平面工具名适配 schema，官方 alpha HTTP 路径不变；这是兼容别名，并不冒充服务端保留的 `notes`/`history` namespace。
+- 接近阈值时提醒模型保存 checkpoint。当前窗口必须先成功收到写入响应，再完整读回同一笔记；新用户消息或普通工作工具结果会使旧 checkpoint 失效。局部行读取不解锁换窗。模型负责核对加密结果的实际含义，客户端不解密，也不能把 HTTP 200 单独当作明文内容一致的证明。
+- `new_context(checkpoint_path)` 仅安排切换；当前工具批次收尾后，才通过 DSH 持久事务把整个旧请求窗口替换为恢复指针。系统提示词保留，旧事件日志不删除；恢复与 fork 从日志重建窗口状态。新窗口先读 notes，再按需检索 history。
+- **不调用 `/responses/compact`，不发送远程 v2 压缩请求，也不额外调用模型生成摘要。** `/compact` 对 OpenAI 仅在已有有效 checkpoint 时执行换窗；否则明确报错并保留历史。窗口意外耗尽且没有可用 handoff 时也保留历史，不盲目清空或偷偷改用摘要。
+- OAuth 刷新和密钥解析由当前 DSH pi-ai 模型快照持有；插件不读本机 Codex/Pi 凭据文件。endpoint/account 与 checkpoint 绑定，改变身份后拒绝回放旧密文。
+- 远程 history/notes 是实验性私有协议，需要当前后端和账户实际支持。普通 API key、OpenAI 兼容聊天或第三方网关可用，不代表支持该协议。接口错误不会触发破坏性换窗。已滚窗会话依赖 OpenAI 解读其加密 checkpoint；切到不兼容提供方时明确拒绝继续，须新建会话，避免静默丢失状态。未滚窗的其他模型会话不受影响。
+- OpenAI 使用直接原生工具和 SSE，以承载加密工具参数/结果；在 PTC 预设中也仅对 OpenAI 会话切为原生工具。其他提供方的 PTC 展示和传输保持原样。
+
+默认阈值为 `min(contextWindow × 0.8, contextWindow − outputReservation − 32768)`；窗口剩余预算是 DSH token meter 的估算，不是账户配额。可在已有 bundle 的配置中调整：
+
+```yaml
+- id: yu-openai-windows
+  name: '@yu1745/dsh-extensions/openai-windows'
+  config:
+    enabled: true
+    thresholdRatio: 0.8
+    headroomTokens: 32768
+    reminderTokens: 16384
+```
+
+设置 `enabled: false` 时，新会话恢复原始 compact；已有加密滚窗会话仍须使用兼容路径或新建会话。预设修订只对新建/重新组合的会话生效，现有运行中的会话不被强制迁移。
+
+离线回归为 `npm run check`。显式授权联网/模型费用后，可运行 `DSH_TEST_OPENAI_WINDOWS=1 node scripts/test-openai-windows.mjs`（OpenAI SDK），或 `DSH_TEST_OPENAI_WINDOWS=1 node scripts/test-openai-window-agent.mjs`（真实 DSH Session、pi-ai 适配器、工具及换窗事务）。这两个开发诊断脚本只在内存读取本机 Codex 登录凭据，使用独立测试会话和随机笔记，不修改登录文件；测试笔记没有 delete 接口，不自动删除。
 
 ## 独立对话目录
 
