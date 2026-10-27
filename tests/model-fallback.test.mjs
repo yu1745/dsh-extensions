@@ -367,7 +367,7 @@ test("quota reset and provider delay are both respected", () => {
   );
 });
 
-test("a manually selected model outside the queue is tried first and can fall back into the queue", async () => {
+test("a manually selected model outside the queue never triggers fallback or blocking", async () => {
   const h = harness(),
     manual = { provider: "other", model: "manual" };
   h.ctx.llm.listModels = async (p) =>
@@ -377,10 +377,15 @@ test("a manually selected model outside the queue is tried first and can fall ba
   h.selection.current = manual;
   h.selection.assembled = manual;
   h.agent.config = manual;
+  assert.equal(await h.plugin.choose(manual), undefined);
   assert.deepEqual(await h.request(), manual);
-  assert.deepEqual(await h.fail(), { kind: "retry" });
-  assert.deepEqual(await h.request(), a);
-  put(state.fallbackStateFile, {});
+  assert.equal(await h.fail(), undefined);
+  assert.deepEqual(h.selection.current, manual);
+  assert.deepEqual(h.events, []);
+  assert.deepEqual(
+    h.plugin.status().models.map((model) => model.blocked),
+    [null, null, null],
+  );
   h.payload.step++;
   await h.listeners["system-prompt/assemble"](
     {},
@@ -388,6 +393,31 @@ test("a manually selected model outside the queue is tried first and can fall ba
     async () => ({}),
   );
   assert.deepEqual(h.selection.current, manual);
+  assert.deepEqual(await h.request(), manual);
+  assert.equal(await h.fail(), undefined);
+});
+test("manually switching away from an automatic backup disables fallback for an unlisted model", async () => {
+  const h = harness(),
+    manual = { provider: "other", model: "manual" };
+  await h.request();
+  assert.deepEqual(await h.fail(), { kind: "retry" });
+  h.selection.current = manual;
+  h.selection.assembled = manual;
+  h.agent.config = manual;
+  h.listeners["session/event"](h.agent.session, {
+    type: "model/selection",
+    data: manual,
+  });
+  h.payload.step++;
+  await h.listeners["system-prompt/assemble"](
+    {},
+    { agent: h.agent, signal: h.payload.signal },
+    async () => ({}),
+  );
+  assert.deepEqual(await h.request(), manual);
+  assert.equal(await h.fail(), undefined);
+  assert.deepEqual(h.selection.current, manual);
+  assert.deepEqual(h.events, [b]);
 });
 test("an automatic backup never replaces the preferred model, including after a plugin restart", async () => {
   const h = harness();

@@ -111,7 +111,13 @@ export class ModelFallback extends TypertRemoteService {
         const config = fallbackConfig();
         if (!config.enabled) return next();
         const failed = payload.agent.session.requestHeader()?.config;
-        if (!failed) return next();
+        // An unlisted manually selected model is outside this fallback queue.
+        // Do not mark it blocked or retry it through the configured models.
+        if (
+          !failed ||
+          !routes(config).some((route) => sameRoute(route, failed))
+        )
+          return next();
         const current = owner.selectionFor(payload.agent).current ?? failed;
         const preferred = this.preferred(payload.agent, current);
         const series = this.series(payload.agent, payload.turn, payload.step);
@@ -228,7 +234,12 @@ export class ModelFallback extends TypertRemoteService {
     tried = new Set<string>(),
   ): Promise<Selection | undefined> {
     const config = fallbackConfig();
-    if (!config.enabled || !current) return undefined;
+    if (
+      !config.enabled ||
+      !current ||
+      !routes(config).some((route) => sameRoute(route, current))
+    )
+      return undefined;
     const chain: Selection[] = [
       current,
       ...routes(config).filter((route) => !sameRoute(route, current)),
