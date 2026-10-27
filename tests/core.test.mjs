@@ -10,6 +10,7 @@ const {
   priceUsage,
   priceBreakdown,
   aggregateCosts,
+  normalizeCost,
   billingCurrency,
   costRows,
   installCosts,
@@ -291,6 +292,52 @@ test("llm ledger rows store the provider billing currency", async () => {
   assert.equal(codex.currency, "USD");
   assert.equal(codex.amount, 0.0002);
   assert.ok(Math.abs(codex.parts.input - 0.0002) < 1e-15);
+});
+test("Codex Fast requests use double Standard API rates, including historical unknown rows", async () => {
+  const handlers = {};
+  installCosts({ on: (name, handler) => (handlers[name] = handler) });
+  const usage = {
+    inputTokens: 100_000,
+    outputTokens: 100_000,
+    cacheReadTokens: 100_000,
+    cacheWriteTokens: 0,
+  };
+  const run = async (sessionId, model) => {
+    for await (const chunk of handlers["llm/stream"](
+      { sessionId, provider: "openai-codex", model },
+      async function* () {
+        yield { type: "usage", usage };
+      },
+    ))
+      void chunk;
+    return costRows().find((row) => row.sessionId === sessionId);
+  };
+  setSpeed("sol-fast", "fast");
+  const fast = await run("sol-fast", "gpt-6-sol");
+  assert.equal(fast.requestedSpeed, "fast");
+  assert.deepEqual(fast.parts, {
+    cacheRead: 0.04,
+    input: 0.4,
+    output: 2,
+    cacheWrite: 0,
+  });
+  assert.equal(fast.amount, 2.44);
+  const historical = { ...fast, amount: null, parts: null };
+  assert.deepEqual(normalizeCost(historical), {
+    amount: 2.44,
+    currency: "USD",
+    parts: fast.parts,
+  });
+  setSpeed("terra-fast", "fast");
+  assert.equal((await run("terra-fast", "gpt-6.1-terra")).amount, 1.21);
+  setSpeed("sol-ultrafast", "ultrafast");
+  assert.equal((await run("sol-ultrafast", "gpt-6-sol")).amount, null);
+  assert.equal(
+    normalizeCost({ ...historical, requestedSpeed: "ultrafast" }).amount,
+    null,
+  );
+  setSpeed("unknown-fast", "fast");
+  assert.equal((await run("unknown-fast", "gpt-5.6-luna")).amount, null);
 });
 test("quota history records changes, reset changes and heartbeat, retaining last good data", () => {
   const now = Date.now();

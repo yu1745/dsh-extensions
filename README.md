@@ -105,7 +105,7 @@ Codex 标准 API 价格按美元估算；`gpt-6-sol` 使用 PiAI 目录价格，
 | gpt-6-sol | $2 | $0.20 | $10 | $2.50 |
 | gpt-6.1-terra | $1 | $0.05 | $5 | $1.25 |
 
-超过 272K 输入 token 时按长上下文阶梯计价；其他已知模型使用 PiAI 目录中的美元费率。这里显示的是**已知请求的 API 价格估算，不是 ChatGPT/Codex 套餐的实际扣费**。截图中若显示“27 次请求 · 25 个未知价格”，金额只包含其余可计价请求，不能当作全部 27 次的总费用；Fast/Ultrafast 请求（无自定义费率时）、缺失用量或未知模型价格均记为未知，不按零元计。历史未知账本不会自动补价。需要覆盖费率时，可在 `yu-quota` 的配置中提供 `rates.<provider>.<model>`，字段为每百万 token 的 `input/output/cacheRead/cacheWrite`；DeepSeek 官方覆盖值按人民币、其他提供方按美元解释。
+超过 272K 输入 token 时按长上下文阶梯计价；其他已知模型使用 PiAI 目录中的美元费率。`gpt-6-sol` 和 `gpt-6.1-terra` 的 Fast 模式按[官方定价](https://developers.openai.com/api/docs/models/gpt-6-sol)对对应标准档（包括长上下文）乘 2 估算；旧 Fast 请求若保留用量和速度标签，会在汇总时补算，不改写原始账本。这里显示的是**按所请求档位计算的 API 价格估算，不是 ChatGPT/Codex 套餐的实际扣费，也不能保证服务端实际采用的速度档位**。仍未知的 Fast 模型、Ultrafast 请求（无自定义费率时）、缺失用量或未知模型价格均记为未知，不按零元计。需要覆盖费率时，可在 `yu-quota` 的配置中提供 `rates.<provider>.<model>`，字段为每百万 token 的 `input/output/cacheRead/cacheWrite`；DeepSeek 官方覆盖值按人民币、其他提供方按美元解释。
 
 Codex 跨设备账本使用官方 credits，沿用 Pi 的 `$0.04 / credit` 换算，美元金额明确标为估算；导入的首日手动校准也会显示标记。本机费用与跨设备账本不相加。子代理费用依据 DSH 原生父子会话关系汇总，不替换子代理插件、不解析 Pi 的子代理文本。
 

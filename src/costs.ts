@@ -68,7 +68,7 @@ export function emptyCostParts(): CostParts {
 /** Official Standard API card, USD / 1M tokens (2026-10-27).
  * https://developers.openai.com/api/docs/models/gpt-6.1-terra
  * Over 272K input tokens: input/cache rates double, output increases 1.5x.
- * Fast and Ultrafast requests remain unknown until their tier is priced.
+ * Fast requests use 2x these rates; Ultrafast stays unknown.
  */
 const codexRates: Record<string, any> = {
   "gpt-6.1-terra": {
@@ -137,6 +137,21 @@ export function priceBreakdown(
   return {
     amount: parts.input + parts.output + parts.cacheRead + parts.cacheWrite,
     parts,
+  };
+}
+/** Fast is 2x the applicable Standard API rates, including long context.
+ * https://developers.openai.com/api/docs/models/gpt-6-sol
+ * This estimates the requested tier; Codex subscription credits are separate.
+ */
+function fastEstimate(model: string, usage: any, time: number) {
+  if (model !== "gpt-6-sol" && model !== "gpt-6.1-terra") return null;
+  const standard = priceBreakdown("openai-codex", model, usage, time);
+  if (!standard) return null;
+  return {
+    amount: standard.amount * 2,
+    parts: Object.fromEntries(
+      Object.entries(standard.parts).map(([key, value]) => [key, value * 2]),
+    ) as CostParts,
   };
 }
 export function priceUsage(
@@ -249,11 +264,22 @@ export function normalizeCost(row: any): {
   parts: CostParts | null;
 } {
   if (row.currency === "USD" || row.currency === "CNY") {
-    const amount = typeof row.amount === "number" ? row.amount : null;
+    // Older Fast rows saved usage but intentionally left the amount unknown.
+    // Recover their API estimate without changing the append-only ledger.
+    const fast =
+      row.currency === "USD" &&
+      row.provider === "openai-codex" &&
+      row.requestedSpeed === "fast" &&
+      row.amount === null &&
+      row.usage
+        ? fastEstimate(row.model, row.usage, row.startedAt ?? Date.now())
+        : null;
+    const amount =
+      typeof row.amount === "number" ? row.amount : (fast?.amount ?? null);
     return {
       amount,
       currency: row.currency,
-      parts: rowParts(row, amount, row.currency),
+      parts: fast?.parts ?? rowParts(row, amount, row.currency),
     };
   }
   if (row.amount !== undefined) {
@@ -402,16 +428,18 @@ export function installCosts(ctx: any, config: any = {}) {
     } finally {
       if (usage) {
         const priced =
-          mode && mode !== "standard" && !override
-            ? null
-            : priceBreakdown(
-                options.provider,
-                options.model,
-                usage,
-                startedAt,
-                override,
-                currency,
-              );
+          mode === "fast" && !override
+            ? fastEstimate(options.model, usage, startedAt)
+            : mode === "ultrafast" && !override
+              ? null
+              : priceBreakdown(
+                  options.provider,
+                  options.model,
+                  usage,
+                  startedAt,
+                  override,
+                  currency,
+                );
         recordCost({
           id: randomUUID(),
           sessionId: options.sessionId ?? "auxiliary",
