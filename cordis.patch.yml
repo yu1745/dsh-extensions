@@ -11,6 +11,9 @@
     search: false
     fetch: false
 # Web presets provide isolated engines; headless uses the root engine below.
+# The expression is re-evaluated on every loader update, so this row can be
+# disposed after startup even when it loaded first. The engine elects itself per
+# Agent and detaches on disposal, which keeps that flip harmless.
 - id: compaction-basic
   name: '@deepseek-ai/dsh-compaction-basic'
   disabled: true

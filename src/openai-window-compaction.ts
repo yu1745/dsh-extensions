@@ -21,11 +21,45 @@ export default class OpenaiWindowCompaction extends BasicCompactionEngine {
   static Config = BasicCompactionEngine.Config;
   private capacities = new Map<string, { capacity: number; output: number }>();
   private reminders = new WeakMap<object, string>();
+  /** Agents whose window prompt/tools this instance registered. */
+  private served = new Set<any>();
   constructor(ctx: any, config: any = {}) {
     super(ctx, config);
+    const owner = (this.ctx as any).yuOpenaiWindows;
     ctx.on("agent/created", ({ agent }: any) => {
-      ctx.yuOpenaiWindows.attach(agent, this);
+      if (!this.serves(agent)) return;
+      this.served.add(agent);
+      owner.attach(agent, this);
     });
+    // A reloaded or retired instance must give up its Agents: the composing
+    // runtime keeps its records alive, and the owner re-attaches the engine
+    // that is actually composed once this context is gone.
+    ctx.on("dispose", () => {
+      for (const agent of this.served)
+        try {
+          owner.detach?.(agent, this);
+        } catch {}
+      this.served.clear();
+    });
+  }
+  /**
+   * Whether this instance owns an Agent's compaction.
+   *
+   * A preset-capable runtime mounts one engine per preset revision, and a
+   * profile patch may also load this plugin at the root. Only the instance the
+   * Agent's composition resolves to may attach, register window tools or drive
+   * the automatic compaction listeners; the others stay passive so exactly one
+   * engine serves an Agent and no stale instance is ever handed out.
+   */
+  serves(agent: any) {
+    const presets = (this.ctx as any).get?.("agentPresets");
+    if (!presets?.serviceFor) return true;
+    try {
+      const owner = presets.serviceFor(agent, "compaction");
+      return owner === undefined || owner === this;
+    } catch {
+      return true;
+    }
   }
   windowBudget(agent: any) {
     const route = currentRoute(agent),
@@ -65,6 +99,9 @@ export default class OpenaiWindowCompaction extends BasicCompactionEngine {
     trigger: any,
     signal: AbortSignal,
   ): Promise<any> {
+    // Preset-engine election: a passive instance must not run the OpenAI
+    // window policy (or price anything) for an Agent another instance serves.
+    if (!this.serves(agent)) return null;
     const owner = (this.ctx as any).yuOpenaiWindows;
     if (!owner.enabled(currentRoute(agent)))
       return super.compactIfNeeded(agent, trigger, signal);

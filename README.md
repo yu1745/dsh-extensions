@@ -72,8 +72,8 @@ CodeBuddy 从账号的 `/v3/config` 获取模型目录并缓存，发现失败�
 - 输入框的模型菜单按 **提供方 → 模型** 两级选择，点击提供方后在侧边弹出模型子菜单，父菜单保持位置和尺寸；推理档位也使用侧边子菜单。显示各提供方模型数量，支持搜索、方向键和 Enter；Escape 先关闭子菜单。
 
 - 打开右侧栏，在“开始”页选择 **额度与费用**；已有对话的输入框下方也提供入口、当前提供方摘要和本会话计费，同时显示所有可用额度窗口（例如 `5h 剩余 80% · 周 剩余 60%`）。
-- 面板中的搜索后端是新会话默认值；当前会话通过下方命令即时切换。Decision 服务和模型保存后需重新加载读取插件或重启 DSH。
-- 输入 `/websearch-backend`，从指令菜单选中或按回车，会在输入框上方展开五个后端候选；支持搜索、方向键和回车选择，标记当前会话的后端。也可直接输入 `/websearch-backend zai`，无效参数会被拒绝。选择后在当前空闲会话立即生效，恢复会话后保留，不影响其他会话；工具参数和提示词随后端变化，提示缓存可能失效。
+- 搜索后端在 **设置 → 网页搜索** 中修改：默认后端是全局值，对所有未单独指定的会话生效，保存后立即替换空闲会话的工具参数和提示词；正在回复的会话在本轮结束、转入空闲时换用新后端，避免模型拿到没见过的参数。该页也列出哪些会话单独指定了后端，并可一键清除全部覆盖。Decision 服务和模型仍在额度与费用面板保存，保存后需重新加载读取插件或重启 DSH。
+- `/websearch-backend` 只切换当前会话：输入 `/websearch-backend zai` 立即生效，恢复会话后保留，不改变全局默认，也不影响其他会话。不带参数时显示当前会话的后端以及它是会话单独指定还是跟随全局默认。该指令不再在输入框上方展开候选弹层，候选与说明在设置页中。工具参数和提示词随后端变化，提示缓存可能失效。
 - 网页判断通过 PiAI 的通用 `Models.classify` 调用。默认 `typesafe / jev-latest`，也支持 `openai / gpt-6-luna` 和 OpenRouter `/api/alpha/decisions` 的任意可用模型 ID，例如 `microsoft/microsoft-decision-1`。
 - OpenAI Decisions 需要 `OPENAI_API_KEY`，不能使用 Codex OAuth；另外两类使用 `TYPESAFE_API_KEY` 和 `OPENROUTER_API_KEY`。
 - `/fast` 和 `/ultrafast` 分别请求 `priority` 和 `ultrafast` service tier。它们只影响当前会话以后的 Codex 请求；已创建的子会话保留各自快照，实际可用性由模型和账户决定。
@@ -106,6 +106,8 @@ CodeBuddy 从账号的 `/v3/config` 获取模型目录并缓存，发现失败�
 ```
 
 设置 `enabled: false` 时，新会话恢复原始 compact；已有加密滚窗会话仍须使用兼容路径或新建会话。预设修订只对新建/重新组合的会话生效，现有运行中的会话不被强制迁移。
+
+DSH 的实时重载（profile patch 写回、插件管理器、预设修订替换、依赖变更）会在运行中销毁插件上下文：Cordis 在插件 fiber 离开 ACTIVE 时清空它的服务快照，此后任何一次注入服务读取都会抛 `cannot get required service "..." in inactive context`。因此窗口功能不缓存插件实例：每个 Agent 只由「当前组合真正解析到」的 compaction 实例服务（其余实例保持被动），实例被回收时主动解绑，`attach` 也允许新实例接管旧的；预算读取额外校验实例仍处 ACTIVE，取不到时降级为 `unknown`，不让整轮失败。同一 profile 里根行 `yu-window-compaction-root` 的 `!!js` 条件会在树更新时重算，上述机制使该行无论先后加载或后置停用都不会残留失效引用。
 
 离线回归为 `npm run check`。显式授权联网/模型费用后，可运行 `DSH_TEST_OPENAI_WINDOWS=1 node scripts/test-openai-windows.mjs`（OpenAI SDK），或 `DSH_TEST_OPENAI_WINDOWS=1 node scripts/test-openai-window-agent.mjs`（真实 DSH Session、pi-ai 适配器、工具及换窗事务）。这两个开发诊断脚本只在内存读取本机 Codex 登录凭据，使用独立测试会话和随机笔记，不修改登录文件；测试笔记没有 delete 接口，不自动删除。
 

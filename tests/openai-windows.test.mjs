@@ -478,3 +478,73 @@ test("first-turn added prompt/tool token estimate is bounded and explicit", () =
     `OpenAI rolling-window first-turn heuristic overhead: +${addedTokens} tokens; other providers: +0`,
   );
 });
+test("a reloaded engine replaces the stale attachment instead of stranding the agent", () => {
+  const h = harness();
+  const budgetContext = () => h.contexts.at(-1);
+  const stale = new Engine(h.ctx, { auto: false });
+  h.owner.attach(h.agent, stale);
+  // Cordis drops fiber.store when the plugin context leaves ACTIVE, after which
+  // every injected read throws "cannot get required service ... in inactive
+  // context": the owner must never call into such an instance again.
+  stale.ctx = { fiber: { state: 4, uid: null } };
+  const replacement = new Engine(h.ctx, { auto: false });
+  replacement.windowBudget = () => ({
+    remaining: 1234,
+    capacity: 5000,
+    used: 100,
+    threshold: 2000,
+  });
+  h.owner.attach(h.agent, replacement);
+  assert.equal(h.owner.engineFor(h.agent), replacement);
+  assert.match(budgetContext().text(), /Estimated remaining tokens: 1234\./);
+  assert.match(budgetContext().text(), /Current window: /);
+  // A live engine that is later unloaded degrades the budget to "unknown"
+  // instead of failing prompt assembly.
+  replacement.ctx = { fiber: { state: 0, uid: null } };
+  assert.match(budgetContext().text(), /Estimated remaining tokens: unknown\./);
+});
+
+test("detaching an engine releases window ownership, tools and adapter seam", () => {
+  const h = harness();
+  assert.equal(h.owner.engineFor(h.agent), h.engine);
+  assert.ok(h.defs.has("get_context_remaining"));
+  h.owner.detach(h.agent, h.engine);
+  assert.equal(h.owner.engineFor(h.agent), undefined);
+  assert.equal(h.defs.size, 0);
+  const snapshot = { models: {} };
+  assert.equal(
+    snapshotWithWindows(snapshot, {
+      provider: "openai-codex",
+      model: "gpt-6-astra",
+      sessionId: h.agent.id,
+    }),
+    snapshot,
+  );
+  // A late disposer of a replaced instance must not tear down the live one.
+  const live = new Engine(h.ctx, { auto: false });
+  h.owner.attach(h.agent, live);
+  h.owner.detach(h.agent, h.engine);
+  assert.equal(h.owner.engineFor(h.agent), live);
+});
+
+test("an engine another instance serves stays passive for preset-composed agents", async () => {
+  const h = harness();
+  const presets = { serviceFor: () => ({ marker: "other engine" }) };
+  h.ctx.get = (name) => (name === "agentPresets" ? presets : undefined);
+  h.ctx.tokenMeter.measure = () => {
+    throw new Error("passive engine touched the token meter");
+  };
+  assert.equal(h.engine.serves(h.agent), false);
+  assert.equal(
+    await h.engine.compactIfNeeded(h.agent, "pressure", signal),
+    null,
+  );
+  presets.serviceFor = () => h.engine;
+  assert.equal(h.engine.serves(h.agent), true);
+});
+
+test("a disposing engine detaches its agents from the window owner", () => {
+  const h = harness();
+  h.stop();
+  assert.equal(h.owner.engineFor(h.agent), undefined);
+});

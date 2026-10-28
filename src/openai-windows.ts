@@ -21,6 +21,21 @@ import {
 
 export const name = "yu-openai-windows";
 const owners = new Map<string, { owner: any; agent: any; engine: any }>();
+/** Cordis fiber state that can serve injected services (`FiberState.ACTIVE`). */
+const FIBER_ACTIVE = 2;
+/**
+ * Whether a plugin instance can still read its injected services.
+ *
+ * Cordis drops `fiber.store` the moment a plugin fiber leaves ACTIVE (reload,
+ * preset-revision replacement, dependency churn), and any later read of an
+ * injected service then throws `cannot get required service "..." in inactive
+ * context`. Instances without a fiber (unit-test doubles) are trusted.
+ */
+export function engineIsLive(engine: any) {
+  const fiber = engine?.ctx?.fiber;
+  if (fiber === undefined) return engine !== undefined && engine !== null;
+  return fiber.state === FIBER_ACTIVE && fiber.uid !== null;
+}
 let seamUsers = 0;
 let restoreSeam: (() => void) | undefined;
 export function backendIdentity(model: any, apiKey: string, headers: any = {}) {
@@ -219,7 +234,15 @@ export default class OpenaiWindows extends Service {
     return value;
   }
   attach(agent: any, engine: any) {
-    if (this.agents.has(agent.id)) return;
+    const existing = this.agents.get(agent.id);
+    if (existing) {
+      if (existing.engine === engine) return;
+      // A reloaded compaction instance (plugin reload, preset revision
+      // replacement, dependency churn) takes the agent over: re-register the
+      // window prompt/tools against the live engine instead of keeping a
+      // reference whose Cordis context may already be inactive.
+      this.detach(agent, existing.engine);
+    }
     const item = { agent, engine, stop: () => {}, tools: [] as Function[] };
     this.agents.set(agent.id, item);
     owners.set(agent.id, { owner: this, agent, engine });
@@ -234,10 +257,21 @@ export default class OpenaiWindows extends Service {
         order: 85,
         required: true,
         text: () => {
-          if (!this.enabled(currentRoute(agent))) return "";
-          const state = this.state(agent);
-          const budget = engine.windowBudget(agent);
-          return `<context_window>\nCurrent window: ${state.windowId}; index: ${state.index}. Estimated remaining tokens: ${budget.remaining ?? "unknown"}.\n${budget.remaining !== null && budget.remaining <= this.config.reminderTokens ? "Window nearly full. Save and verify a checkpoint, then call new_context before doing further work." : ""}\n</context_window>`;
+          try {
+            if (!this.enabled(currentRoute(agent))) return "";
+            const state = this.state(agent);
+            const budget = this.budgetFor(agent),
+              remaining = budget?.remaining ?? null;
+            return `<context_window>\nCurrent window: ${state.windowId}; index: ${state.index}. Estimated remaining tokens: ${remaining ?? "unknown"}.\n${remaining !== null && remaining <= this.config.reminderTokens ? "Window nearly full. Save and verify a checkpoint, then call new_context before doing further work." : ""}\n</context_window>`;
+          } catch (error) {
+            // A missing budget must never fail prompt assembly, and a turn must
+            // never die because a plugin instance was reloaded underneath us.
+            (this.ctx as any).logger?.warn?.(
+              `yu-openai-windows: window budget unavailable for ${agent.id}`,
+              error,
+            );
+            return "";
+          }
         },
       });
       this.sync(agent);
@@ -246,11 +280,79 @@ export default class OpenaiWindows extends Service {
         context();
         for (const d of item.tools.splice(0)) d();
         owners.delete(agent.id);
-        this.agents.delete(agent.id);
+        if (this.agents.get(agent.id) === item) this.agents.delete(agent.id);
         this.transports.delete(agent);
       };
     });
     item.stop = stop;
+  }
+  /**
+   * Drop the window prompt/tools for one Agent.
+   *
+   * Called by a disposing compaction instance and by {@link attach} while
+   * replacing a stale engine. `engine` scopes the detach to that instance so a
+   * late disposer cannot tear down a newer attachment.
+   */
+  detach(agent: any, engine?: any) {
+    const item = this.agents.get(agent.id);
+    if (!item) return;
+    if (engine !== undefined && item.engine !== engine) return;
+    this.agents.delete(agent.id);
+    owners.delete(agent.id);
+    this.transports.delete(agent);
+    try {
+      item.stop();
+    } catch (error) {
+      (this.ctx as any).logger?.warn?.(
+        `yu-openai-windows: detach failed for ${agent.id}`,
+        error,
+      );
+    }
+  }
+  /**
+   * Read the live `compaction` engine of an Agent's scoped composition.
+   *
+   * With agent presets, the effective engine lives inside the preset realm and
+   * is not reachable from this root context; the registry publishes it per
+   * Agent. Without presets (headless), no engine re-resolution is needed.
+   */
+  resolveEngine(agent: any) {
+    const presets = (this.ctx as any).get?.("agentPresets");
+    if (!presets?.serviceFor) return undefined;
+    try {
+      const engine = presets.serviceFor(agent, "compaction");
+      return engineIsLive(engine) ? engine : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  /**
+   * The engine that may serve this Agent right now.
+   *
+   * A stale attachment is replaced by the currently composed engine, so a
+   * reloaded plugin instance can never strand the Agent on a dead context.
+   */
+  engineFor(agent: any) {
+    const item = this.agents.get(agent.id);
+    if (item && engineIsLive(item.engine)) return item.engine;
+    const next = this.resolveEngine(agent);
+    if (next === undefined) return undefined;
+    this.attach(agent, next);
+    return next;
+  }
+  /** Safe window budget read: `null` when no live engine can answer. */
+  budgetFor(agent: any) {
+    const engine = this.engineFor(agent);
+    if (engine === undefined) return null;
+    try {
+      return engine.windowBudget(agent);
+    } catch (error) {
+      (this.ctx as any).logger?.warn?.(
+        `yu-openai-windows: window budget read failed for ${agent.id}`,
+        error,
+      );
+      return null;
+    }
   }
   sync(agent: any, route: any = currentRoute(agent)) {
     const item = this.agents.get(agent.id);
@@ -366,7 +468,12 @@ export default class OpenaiWindows extends Service {
         },
         output,
         execute: async () => ({
-          ...item.engine.windowBudget(agent),
+          ...((this.budgetFor(agent) as any) ?? {
+            remaining: null,
+            capacity: null,
+            used: null,
+            threshold: null,
+          }),
           window_id: this.state(agent).windowId,
         }),
       }),
