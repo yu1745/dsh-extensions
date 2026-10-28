@@ -10,7 +10,7 @@
 | `yu-quota` | 五源额度、余额与历史曲线；Codex 跨设备账本；本机和原生子代理费用；底栏会话计费 |
 | `yu-codex-fast` | 会话级 `/fast`、`/ultrafast`、`/codex-speed`；子会话继承创建时快照 |
 | `yu-model-fallback` | 独立设置页配置单模型优先级；额度耗尽顺位回退，恢复后优先回到手动首选模型 |
-| `yu-openai-windows` | OpenAI 模型使用 notes/history 滚窗，不发摘要或远程压缩请求；其他模型沿用 DSH 基础 compact |
+| `yu-openai-windows` | 在 DSH 设置中全局手动选择 OpenAI notes/history 滚窗或远程压缩；其他模型沿用 DSH 基础 compact |
 | `yu-no-workspace` | 全局新对话默认使用独立目录，形式上显示“不在工作区工作”；每次创建真实子目录与注册工作区 |
 
 额度来源为 DeepSeek、GLM、MiniMax、OpenAI Codex、Antigravity。后台在 DSH 运行期间每分钟刷新，不依赖浏览器打开；同一个 DSH home 的多个进程共用轮询锁。
@@ -81,17 +81,18 @@ CodeBuddy 从账号的 `/v3/config` 获取模型目录并缓存，发现失败�
 
 在插件页分别停用 `yu-web-search` 或 `yu-web-reader` 时，恢复对应的 DSH 内置工具。标准、PTC 和 Creator 预设采用相同规则；最小预设保留原来的工具范围。组合胶水行 `yu-extensions` 和 `yu-web-tools` 随整个包启停。
 
-## OpenAI 滚动上下文窗口
+## OpenAI 上下文管理
 
-第一参考是 [Codex CLI 的 notes/history 实现](https://github.com/openai/codex/tree/aeb6b22c8bda5f4d4b6ab80ebd3ccdb3f47fb3ab/codex-rs/ext/history-notes) 与 token-budget 换窗流程，而不是 Pi 插件。标准、PTC、Creator 预设及 headless 的 compaction 服务使用相同的路由分派：只对 `openai` / `openai-codex` 提供方下的 OpenAI 模型启用；DeepSeek、Anthropic、Antigravity 等仍直接调用 DSH 原始 `BasicCompactionEngine`，不增加窗口工具或提示词。最小预设原本没有 compaction，保持不变。
+在 **设置 → OpenAI 上下文** 中全局手动选择「上下文滚窗」或「远程压缩」；默认仍为滚窗。不会在会话开始时发送 alpha 探测请求，也不会因接口错误自动切换模式。设置作用于 OpenAI `openai` / `openai-codex` 路由；其他提供方仍使用 DSH 原始 `BasicCompactionEngine`，最小预设保持原样。
 
-- 模型获得 `notes_*`、`history_*`、`get_context_remaining` 和 `new_context`。DSH 使用平面工具名适配 schema，官方 alpha HTTP 路径不变；这是兼容别名，并不冒充服务端保留的 `notes`/`history` namespace。
-- 接近阈值时提醒模型保存 checkpoint。当前窗口必须先成功收到写入响应，再完整读回同一笔记；新用户消息或普通工作工具结果会使旧 checkpoint 失效。局部行读取不解锁换窗。模型负责核对加密结果的实际含义，客户端不解密，也不能把 HTTP 200 单独当作明文内容一致的证明。
-- `new_context(checkpoint_path)` 仅安排切换；当前工具批次收尾后，才通过 DSH 持久事务把整个旧请求窗口替换为恢复指针。系统提示词保留，旧事件日志不删除；恢复与 fork 从日志重建窗口状态。新窗口先读 notes，再按需检索 history。
-- **不调用 `/responses/compact`，不发送远程 v2 压缩请求，也不额外调用模型生成摘要。** `/compact` 对 OpenAI 仅在已有有效 checkpoint 时执行换窗；否则明确报错并保留历史。窗口意外耗尽且没有可用 handoff 时也保留历史，不盲目清空或偷偷改用摘要。
-- OAuth 刷新和密钥解析由当前 DSH pi-ai 模型快照持有；插件不读本机 Codex/Pi 凭据文件。endpoint/account 与 checkpoint 绑定，改变身份后拒绝回放旧密文。
-- 远程 history/notes 是实验性私有协议，需要当前后端和账户实际支持。普通 API key、OpenAI 兼容聊天或第三方网关可用，不代表支持该协议。接口错误不会触发破坏性换窗。已滚窗会话依赖 OpenAI 解读其加密 checkpoint；切到不兼容提供方时明确拒绝继续，须新建会话，避免静默丢失状态。未滚窗的其他模型会话不受影响。
-- OpenAI 使用直接原生工具和 SSE，以承载加密工具参数/结果；在 PTC 预设中也仅对 OpenAI 会话切为原生工具。其他提供方的 PTC 展示和传输保持原样。
+- **上下文滚窗**：模型使用 `notes_*`、`history_*`、`get_context_remaining` 和 `new_context`。换窗前必须成功写入并完整读回当前 checkpoint；普通工作或新用户消息会使旧 checkpoint 失效。接口错误时保留原窗口并报错，不自动切换；HTTP 200 和密文形状也不能证明笔记内容或旧历史确实可读。
+- **远程压缩**：不注入 notes/history 换窗工具或提示词；Codex 使用 Responses 远程压缩 v2，标准 OpenAI Responses 使用 `/responses/compact`。临近预算上限时压缩，`/compact` 可手动触发；完整远端输出和身份绑定记录在会话日志，后续请求按原顺序重放。远端失败、输出无效、会话变化、身份不符或压缩结果不够小时不替换原历史。远程压缩本身可能丢失细节，客户端无法解密或证明 opaque 压缩项保留了全部语义；原始事件日志仍然保留。压缩请求可能消耗模型额度；此独立远程请求可能不计入本插件原有的模型费用估算。
+- **远程压缩速度**：同一设置页可独立选择「普通」或「Fast」，默认普通，不继承聊天的 `/fast` 或 `/ultrafast`。Fast 对远程压缩请求使用 `priority` 服务档位，可能增加费用，且需要所选 API/模型支持。保存后作用于下一次压缩；处理中更改设置会使当前操作安全取消，不会静默改档位。
+- **失败诊断**：远程准备、请求/HTTP、输出校验及压缩结果未缩小/超预算分别保留受限错误代码，不再全部归为 `transaction-failed`；不记录响应正文、认证头或会话内容。现有长会话报错的根因仍需其具体诊断，不能将新增速度设置视为已验证修复。
+- **重启后的远程身份初始化**：首次手动 `/compact` 或恢复 checkpoint 的预算检查不再依赖先前普通模型请求留下的内存缓存。插件通过当前 DSH 适配器生成不含会话历史的合成请求并在本地截获 Responses 发送，按实际认证头建立身份；OAuth 凭据解析仍可能联网刷新。初始化期间的账号、模型、会话或适配器变化会取消操作；已有 checkpoint 必须通过持久记录的身份校验，不能改绑到新账号。凭据/适配器更新会清除派生缓存。
+- **已有会话的安全边界**：尚未换窗或压缩的会话在安全的下一步使用新的全局模式。已经滚窗的会话继续使用滚窗；已有远程压缩 checkpoint 的会话继续使用远程压缩，不将密文静默迁往另一模式或账户。要让这类会话采用另一模式，请新建会话并显式携带必要上下文。插件不会删除旧事件日志；远程独有的加密笔记无法保证从本地日志恢复。若崩溃或 fork 截断了压缩事务，插件会拒绝回放；可从替换前的事件位置另建 fork，而不是将残缺指针当成普通上下文。
+- 远程 notes/history 和 Codex 远程压缩 v2 均是实验性接口，服务端、模型与账号支持情况可能变化。远程压缩使用当前 DSH pi-ai 认证，并限制为所支持的官方 Responses 路由；代理、其他适配器或不匹配的运行时版本会明确失败并保留历史。已有远程压缩会话需要此插件继续重放 checkpoint，卸载插件前应先保存可读的工作交接。
+- 滚窗在 OpenAI 会话使用原生工具和 SSE 传输加密结果；其他提供方的 PTC 展示和传输保持原样。
 
 默认阈值为 `min(contextWindow × 0.8, contextWindow − outputReservation − 32768)`；窗口剩余预算是 DSH token meter 的估算，不是账户配额。可在已有 bundle 的配置中调整：
 
@@ -100,12 +101,16 @@ CodeBuddy 从账号的 `/v3/config` 获取模型目录并缓存，发现失败�
   name: '@yu1745/dsh-extensions/openai-windows'
   config:
     enabled: true
+    mode: windows # windows 或 remote，手动选择
+    remoteSpeed: standard # standard（普通）或 fast，仅影响远程压缩
     thresholdRatio: 0.8
     headroomTokens: 32768
     reminderTokens: 16384
 ```
 
 设置 `enabled: false` 时，新会话恢复原始 compact；已有加密滚窗会话仍须使用兼容路径或新建会话。预设修订只对新建/重新组合的会话生效，现有运行中的会话不被强制迁移。
+
+Cordis 的服务读取和服务方法返回值会产生新的、甚至多层的 tracing 代理；引擎归属、owner 复查和绑定/解绑按 `symbols.original` 指向的底层实现比较，而不直接比较代理的 `===`，避免正常 `/compact` 被误判为 `Compaction engine is no longer active for this agent`。调用仍保留原代理上下文，不放宽不同预设修订、已销毁引擎或服务变更的安全检查。
 
 DSH 的实时重载（profile patch 写回、插件管理器、预设修订替换、依赖变更）会在运行中销毁插件上下文：Cordis 在插件 fiber 离开 ACTIVE 时清空它的服务快照，此后任何一次注入服务读取都会抛 `cannot get required service "..." in inactive context`。因此窗口功能不缓存插件实例：每个 Agent 只由「当前组合真正解析到」的 compaction 实例服务（其余实例保持被动），实例被回收时主动解绑，`attach` 也允许新实例接管旧的；预算读取额外校验实例仍处 ACTIVE，取不到时降级为 `unknown`，不让整轮失败。同一 profile 里根行 `yu-window-compaction-root` 的 `!!js` 条件会在树更新时重算，上述机制使该行无论先后加载或后置停用都不会残留失效引用。
 

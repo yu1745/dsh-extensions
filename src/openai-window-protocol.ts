@@ -409,6 +409,19 @@ export function transformWindowPayload<T>(
   } as T;
 }
 
+// A classified transport failure is advisory: it can disable future alpha
+// transitions, but it never proves that an already-committed window is safe
+// to discard or that the remote compaction service is available.
+export class WindowBackendError extends Error {
+  constructor(
+    message: string,
+    readonly kind: "cancelled" | "timeout" | "transport" | "http" | "protocol",
+    readonly status?: number,
+  ) {
+    super(message);
+  }
+}
+
 /** Call a Codex alpha notes/history endpoint. Never logs args, ciphertext or credentials. */
 export async function callWindowBackend(
   config: WindowBackendConfig,
@@ -474,19 +487,31 @@ export async function callWindowBackend(
       redirect: "error",
     });
   } catch {
-    throw new Error(
+    const kind = signal?.aborted
+      ? "cancelled"
+      : timeout.aborted
+        ? "timeout"
+        : "transport";
+    throw new WindowBackendError(
       combined.aborted
         ? "History backend request was cancelled or timed out."
         : "History backend request failed.",
+      kind,
     );
   }
   if (!response.ok)
-    throw new Error(
+    throw new WindowBackendError(
       `History backend request failed (HTTP ${response.status}).`,
+      "http",
+      response.status,
     );
   try {
     return await response.json();
   } catch {
-    throw new Error("History backend returned invalid JSON.");
+    if (signal?.aborted)
+      throw new WindowBackendError("History backend request was cancelled or timed out.", "cancelled");
+    if (timeout.aborted)
+      throw new WindowBackendError("History backend request was cancelled or timed out.", "timeout");
+    throw new WindowBackendError("History backend returned invalid JSON.", "protocol");
   }
 }

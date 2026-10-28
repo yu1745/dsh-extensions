@@ -1,1 +1,1 @@
-{"meta":{"title":"OpenAI rolling windows","description":"Codex-style notes/history handoffs for OpenAI; other providers keep DSH compaction."}}
+{"meta":{"title":"OpenAI context management","description":"Manually choose rolling windows or remote compaction for OpenAI; other providers keep DSH compaction."}}

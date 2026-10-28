@@ -1,5 +1,6 @@
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { codexServiceOptions } from "./speed-context.js";
+import { registerAdapterWrapper } from "./openai-adapter-chain.mjs";
 let users = 0;
 let restore: (() => void) | undefined;
 /** Supply model-hidden options at the pi-ai seam without rebuilding DSH profiles. */
@@ -30,6 +31,7 @@ export function installAdapterSpeed() {
     const wrapped = function (this: any, options: any, snapshot: any) {
       return original.call(this, options, snapshotWithSpeed(snapshot, options));
     };
+    registerAdapterWrapper(wrapped, original);
     prototype.streamWithSnapshot = wrapped;
     restore = () => {
       if (prototype.streamWithSnapshot === wrapped)

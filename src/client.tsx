@@ -1,6 +1,7 @@
 import { installFallbackSettings } from "./fallback-panel.js";
 import { installNoWorkspace } from "./no-workspace-client.js";
 import { installModelMenu } from "./model-menu.js";
+import { installOpenaiContextSettings } from "./openai-context-settings.js";
 import { ProviderPanel } from "./provider-panel.js";
 import { providerRemoteInfo } from "./provider-remote.js";
 import React, { useState, useEffect, useSyncExternalStore } from "react";
@@ -848,6 +849,7 @@ export async function apply(ctx: any) {
   try {
     await installNoWorkspace(ctx);
     await installFallbackSettings(ctx);
+    installOpenaiContextSettings(ctx);
     await ctx.remote.$mount(remoteInfo);
     await ctx.remote.$mount(providerRemoteInfo);
     ctx.inject(["remote.yuQuota", "remote.commands"], (ctx: any) => {

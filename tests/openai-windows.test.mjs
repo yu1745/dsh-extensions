@@ -32,7 +32,8 @@ function harness(provider = "openai-codex") {
     defs = new Map(),
     sections = [],
     contexts = [],
-    cleanup = [];
+    cleanup = [],
+    scopeEvents = {};
   const ctx = {
     reflect: { provide() {} },
     on: (name, fn) => {
@@ -60,7 +61,7 @@ function harness(provider = "openai-codex") {
         defaultMaxTokens: 1000,
       }),
     },
-    sessions: { flush: async () => {} },
+    sessions: { flush: async () => true },
     tokenMeter: {
       estimateMessage,
       measure: () => {
@@ -86,6 +87,10 @@ function harness(provider = "openai-codex") {
   ctx.yuOpenaiWindows = owner;
   const scope = {
     get: () => undefined,
+    on: (name, fn) => {
+      scopeEvents[name] = fn;
+      return () => { if (scopeEvents[name] === fn) delete scopeEvents[name]; };
+    },
     effect: (fn) => {
       const stop = fn();
       cleanup.push(stop);
@@ -200,6 +205,10 @@ function harness(provider = "openai-codex") {
       { apiKey: "test-key" },
     );
   }
+  async function activate() {
+    transport();
+    await scopeEvents["agent/pre-step"]({ agent, signal }, async () => ({ kind: "enter", messages: [] }));
+  }
   function stop() {
     for (const fn of cleanup.reverse()) fn();
     for (const fn of events.dispose ?? []) if (typeof fn === "function") fn();
@@ -216,6 +225,7 @@ function harness(provider = "openai-codex") {
     call,
     init,
     transport,
+    activate,
     state: () => owner.state(agent),
     stop,
   };
@@ -286,7 +296,7 @@ test("verified notes handoff resets entire surface without model summary; replay
     new Response(JSON.stringify({ encrypted_output: "opaque-backend-result" }));
   try {
     h.init();
-    h.transport();
+    await h.activate();
     assert.equal(h.defs.size, 11);
     await assert.rejects(
       h.defs.get("new_context").execute({ checkpoint_path: "checkpoint.txt" }),
@@ -351,7 +361,7 @@ test("failed operations, new user inputs, ordinary work and account switches do 
     new Response(JSON.stringify({ encrypted_output: "opaque" }));
   try {
     h.init();
-    h.transport();
+    await h.activate();
     await h.call("notes_write_file", { path: "c", text: "x" });
     await h.call("notes_read_file", { path: "c" });
     assert.ok(checkpointReady(h.state()));
@@ -406,8 +416,10 @@ test("failed operations, new user inputs, ordinary work and account switches do 
     h.stop();
   }
 });
-test("model changes remove scoped tools and unloading removes adapter ownership", () => {
+test("model changes remove scoped tools and unloading removes adapter ownership", async () => {
   const h = harness();
+  assert.equal(h.defs.size, 11);
+  await h.activate();
   assert.equal(h.defs.size, 11);
   h.agent.options = { provider: "deepseek-official", model: "deepseek-flash" };
   h.owner.sync(h.agent);
@@ -430,7 +442,7 @@ test("manual compact uses a verified checkpoint and resets the complete window",
     new Response(JSON.stringify({ encrypted_output: "opaque" }));
   try {
     h.init();
-    h.transport();
+    await h.activate();
     await h.call("notes_write_file", { path: "manual", text: "encrypted" });
     await h.call("notes_read_file", { path: "manual" });
     h.session.append("step/end", { turn: 1, step: 1 });
@@ -478,7 +490,7 @@ test("first-turn added prompt/tool token estimate is bounded and explicit", () =
     `OpenAI rolling-window first-turn heuristic overhead: +${addedTokens} tokens; other providers: +0`,
   );
 });
-test("a reloaded engine replaces the stale attachment instead of stranding the agent", () => {
+test("a reloaded engine replaces the stale attachment instead of stranding the agent", async () => {
   const h = harness();
   const budgetContext = () => h.contexts.at(-1);
   const stale = new Engine(h.ctx, { auto: false });
@@ -495,24 +507,27 @@ test("a reloaded engine replaces the stale attachment instead of stranding the a
     threshold: 2000,
   });
   h.owner.attach(h.agent, replacement);
+  await h.activate();
   assert.equal(h.owner.engineFor(h.agent), replacement);
   assert.match(budgetContext().text(), /Estimated remaining tokens: 1234\./);
   assert.match(budgetContext().text(), /Current window: /);
-  // A live engine that is later unloaded degrades the budget to "unknown"
-  // instead of failing prompt assembly.
+  // Without a live engine the window prompt is suppressed; the agent guard
+  // remains installed and can rebind when a new engine becomes available.
   replacement.ctx = { fiber: { state: 0, uid: null } };
-  assert.match(budgetContext().text(), /Estimated remaining tokens: unknown\./);
+  assert.equal(budgetContext().text(), "");
+  h.stop();
 });
 
-test("detaching an engine releases window ownership, tools and adapter seam", () => {
+test("detaching an engine keeps the agent guard but releases window tools", async () => {
   const h = harness();
+  await h.activate();
   assert.equal(h.owner.engineFor(h.agent), h.engine);
   assert.ok(h.defs.has("get_context_remaining"));
   h.owner.detach(h.agent, h.engine);
   assert.equal(h.owner.engineFor(h.agent), undefined);
   assert.equal(h.defs.size, 0);
   const snapshot = { models: {} };
-  assert.equal(
+  assert.notEqual(
     snapshotWithWindows(snapshot, {
       provider: "openai-codex",
       model: "gpt-6-astra",
@@ -525,6 +540,8 @@ test("detaching an engine releases window ownership, tools and adapter seam", ()
   h.owner.attach(h.agent, live);
   h.owner.detach(h.agent, h.engine);
   assert.equal(h.owner.engineFor(h.agent), live);
+  h.stop();
+  assert.equal(snapshotWithWindows(snapshot, { provider: "openai-codex", model: "gpt-6-astra", sessionId: h.agent.id }), snapshot);
 });
 
 test("an engine another instance serves stays passive for preset-composed agents", async () => {

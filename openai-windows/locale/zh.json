@@ -1,1 +1,1 @@
-{"meta":{"title":"OpenAI 滚动上下文窗口","description":"OpenAI 模型使用 Codex 风格笔记与历史换窗，其他提供方保持 DSH 原生压缩。"}}
+{"meta":{"title":"OpenAI 上下文管理","description":"手动选择 OpenAI 滚动窗口或远程压缩；其他提供方保持 DSH 原生压缩。"}}

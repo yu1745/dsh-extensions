@@ -40,6 +40,8 @@ export function parseMarker(message: any) {
   }
 }
 export function foldWindow(state: any, event: any) {
+  // Earlier experimental auto-fallback inbox markers are deliberately ignored:
+  // only a real compressed checkpoint pins a session's manual mode.
   if (event.type === "user/message") {
     const marker = parseMarker(event.data);
     if (marker) {
@@ -110,7 +112,7 @@ export function foldWindow(state: any, event: any) {
 }
 export const windowProjection = {
   key: WINDOW_STATE,
-  stateVersion: 1,
+  stateVersion: 3,
   stateSchema: z.object({
     ownerId: z.string(),
     sessionId: z.string(),
