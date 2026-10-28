@@ -1,7 +1,9 @@
 // Standalone prototype: transport and validation only; no replay-window construction.
 // The caller supplies a pre-authenticated header set and an injected fetch function.
 const FEATURE = "remote_compaction_v2";
-const DEFAULTS = Object.freeze({ timeoutMs: 35_000, maxBytes: 4 * 1024 * 1024, maxEventBytes: 512 * 1024, maxEvents: 10_000 });
+// Long conversation compaction can exceed an ordinary short request budget.
+// Keep a bounded five-minute deadline while still honoring caller cancellation.
+const DEFAULTS = Object.freeze({ timeoutMs: 300_000, maxBytes: 4 * 1024 * 1024, maxEventBytes: 512 * 1024, maxEvents: 10_000 });
 
 export class RemoteCompactionError extends Error {
   constructor(code, status) {

@@ -35,8 +35,8 @@ function validOutput(output) {
   return compactions === 1;
 }
 /** Returns the entire provider output, in order, without normalization. */
-export async function requestStandardCompaction({ endpoint, headers, payload, fetch: fetcher, signal, timeoutMs = 35000, maxBytes = 16 * 1024 * 1024 }) {
-  if (typeof fetcher !== 'function' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 35000 ||
+export async function requestStandardCompaction({ endpoint, headers, payload, fetch: fetcher, signal, timeoutMs = 300000, maxBytes = 16 * 1024 * 1024 }) {
+  if (typeof fetcher !== 'function' || !Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 300000 ||
       !Number.isSafeInteger(maxBytes) || maxBytes < 1 || !isObject(payload) ||
       typeof payload.model !== 'string' || !payload.model || !Array.isArray(payload.input)) fail('invalid-request');
   let url, requestHeaders, body;
