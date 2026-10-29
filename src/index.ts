@@ -105,5 +105,7 @@ export async function importPi(ctx: any) {
 }
 export async function apply(ctx: any, config: any) {
   if (config.importPi) await importPi(ctx);
+  const { startCodexTokenSync } = await import("./codex-token-sync.js");
+  startCodexTokenSync(ctx);
   new Extensions(ctx);
 }
