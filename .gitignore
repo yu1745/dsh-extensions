@@ -4,3 +4,6 @@ lib/
 .env*
 .DS_Store
 .playwright-cli/
+scripts/remote-headless-*.json
+scripts/remote-headless-sessions/
+scripts/remote-compaction-regression.log
