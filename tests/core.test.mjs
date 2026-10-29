@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 const home = mkdtempSync(join(tmpdir(), "dsh-extensions-tests-"));
@@ -450,6 +450,16 @@ function fakeContext() {
     get(n) {
       return this[n];
     },
+    effect(factory) {
+      const dispose = factory();
+      return () => dispose?.();
+    },
+    reflect: { provide() {} },
+    typert: { register: () => () => {} },
+    inject(deps, callback) {
+      if (deps.every((name) => this.get(name) !== undefined)) callback(this);
+      return () => {};
+    },
     logger: { info() {} },
     emit(event, ...args) {
       for (const f of [...(handlers.get(event) ?? [])]) f(...args);
@@ -635,4 +645,92 @@ test("Fast dock API shares command state and sets an explicit session mode", asy
   assert.deepEqual(api.setFast("dock-session", true), { mode: "fast" });
   setSpeed("dock-session", "standard");
   assert.deepEqual(api.speed("dock-session"), { mode: "standard" });
+});
+test("search overrides stay explicit, follow the global default, and clear cleanly", async () => {
+  const search = await import("../lib/search-context.js");
+  const { settings, updateSettings } = await import("../lib/state.js");
+  const before = settings().webSearchBackend;
+  updateSettings({ webSearchBackend: "google" });
+  try {
+    // Older releases wrote one override per attached session without a flag.
+    // Such a record must keep following the global default, not pin "zai".
+    const legacy = join(
+      home,
+      "extensions",
+      "yu1745",
+      "search-backends",
+      "legacy-session.json",
+    );
+    mkdirSync(join(legacy, ".."), { recursive: true });
+    writeFileSync(legacy, JSON.stringify({ backend: "zai" }));
+    assert.equal(search.explicitSearchBackend("legacy-session"), undefined);
+    assert.equal(search.searchBackendFor("legacy-session"), "google");
+    assert.deepEqual(search.searchOverrides(), []);
+
+    search.saveSearchBackend("pinned-session", "deepseek");
+    assert.equal(search.explicitSearchBackend("pinned-session"), "deepseek");
+    assert.equal(search.searchBackendFor("pinned-session"), "deepseek");
+    assert.deepEqual(search.searchOverrides(), [
+      { sessionId: "pinned-session", backend: "deepseek" },
+    ]);
+
+    // The global default moves sessions that never opted in, and only those.
+    updateSettings({ webSearchBackend: "minimax" });
+    assert.equal(search.searchBackendFor("legacy-session"), "minimax");
+    assert.equal(search.searchBackendFor("pinned-session"), "deepseek");
+
+    search.clearSearchOverrides();
+    assert.deepEqual(search.searchOverrides(), []);
+    assert.equal(search.searchBackendFor("pinned-session"), "minimax");
+  } finally {
+    updateSettings({ webSearchBackend: before ?? "google" });
+  }
+});
+test("settings face reports the default, the backends and explicit overrides", async () => {
+  const { WebSearch } = await import("../lib/web-search.js");
+  const search = await import("../lib/search-context.js");
+  const { settings, updateSettings } = await import("../lib/state.js");
+  const before = settings().webSearchBackend;
+  const registered = [];
+  const ctx = {
+    reflect: { provide() {} },
+    effect: (f) => f(),
+    typert: {
+      register(info) {
+        registered.push(info);
+        return () => {};
+      },
+    },
+  };
+  try {
+    search.clearSearchOverrides();
+    updateSettings({ webSearchBackend: "openai" });
+    const service = new WebSearch(ctx, () => {});
+    assert.equal(service.name, "yuWebSearch");
+    assert.equal(registered[0].package, "@yu1745/dsh-extensions/web-search");
+    assert.equal(registered[0].invocations.length, 3);
+    const initial = service.settings();
+    assert.equal(initial.defaultBackend, "openai");
+    assert.deepEqual(initial.backends, [
+      "google",
+      "openai",
+      "deepseek",
+      "minimax",
+      "zai",
+    ]);
+    assert.deepEqual(initial.overrides, []);
+
+    search.saveSearchBackend("other-session", "zai");
+    assert.deepEqual(service.setDefault("deepseek").overrides, [
+      { sessionId: "other-session", backend: "zai" },
+    ]);
+    assert.equal(search.searchBackendFor("other-session"), "zai");
+    assert.equal(search.searchBackendFor("free-session"), "deepseek");
+    assert.deepEqual(service.clearOverrides().overrides, []);
+    assert.equal(search.searchBackendFor("other-session"), "deepseek");
+    assert.throws(() => service.setDefault("nope"), /Unknown backend/);
+  } finally {
+    search.clearSearchOverrides();
+    updateSettings({ webSearchBackend: before ?? "google" });
+  }
 });

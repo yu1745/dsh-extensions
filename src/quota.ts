@@ -1,5 +1,4 @@
 import { setSpeed, speedOf } from "./speed-context.js";
-import { searchBackendFor } from "./search-context.js";
 import { TypertRemoteService } from "@deepseek-ai/dsh-typert-protocol";
 import lockfile from "proper-lockfile";
 import { mkdirSync } from "node:fs";
@@ -322,7 +321,6 @@ export class Quota extends TypertRemoteService {
 
   preferences() {
     return {
-      webSearchBackend: settings().webSearchBackend ?? "google",
       classifier: settings().classifier ?? {
         provider: "typesafe",
         model: "jev-latest",
@@ -335,9 +333,6 @@ export class Quota extends TypertRemoteService {
   setFast(sessionId: string, enabled: boolean) {
     setSpeed(sessionId, enabled ? "fast" : "standard");
     return this.speed(sessionId);
-  }
-  searchBackend(sessionId: string) {
-    return { backend: searchBackendFor(sessionId) };
   }
   savePreferences(value: any) {
     updateSettings(value);

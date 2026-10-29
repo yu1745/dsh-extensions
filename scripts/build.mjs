@@ -32,6 +32,7 @@ const nodeBuild = await build({
     "turn-elapsed-format": "src/turn-elapsed-format.ts",
     "prompt-sanitize": "src/prompt-sanitize.ts",
     "search-context": "src/search-context.ts",
+    state: "src/state.ts",
     "adapter-speed": "src/adapter-speed.ts",
   },
   outdir: "lib",

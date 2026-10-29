@@ -1,6 +1,7 @@
 import { installFallbackSettings } from "./fallback-panel.js";
 import { installNoWorkspace } from "./no-workspace-client.js";
 import { installModelMenu } from "./model-menu.js";
+import { installSearchSettings } from "./search-settings.js";
 import { installOpenaiContextSettings } from "./openai-context-settings.js";
 import { ProviderPanel } from "./provider-panel.js";
 import { providerRemoteInfo } from "./provider-remote.js";
@@ -228,7 +229,7 @@ export function Panel({ api }: { api: any }) {
     try {
       const r = await api.savePreferences({ value: prefs });
       if (!r.ok) throw r.error;
-      setNotice("已保存新会话默认后端。语义判断设置将在重启 DSH 后生效。");
+      setNotice("已保存。语义判断设置将在重新加载插件或重启 DSH 后生效。");
     } catch (e: any) {
       setNotice(e.message);
     }
@@ -449,22 +450,11 @@ export function Panel({ api }: { api: any }) {
       {prefs && (
         <>
           {api.providers && <ProviderPanel api={api.providers} />}
-          <h3>网页工具设置</h3>
-          <p className="yu-muted">当前会话使用 /websearch-backend 即时切换。</p>
+          <h3>语义判断设置</h3>
+          <p className="yu-muted">
+            网页判断使用的决策服务，保存后需重新加载读取插件或重启 DSH。
+          </p>
           <div className="yu-controls">
-            <label>
-              新会话默认搜索后端
-              <select
-                value={prefs.webSearchBackend}
-                onChange={(e) =>
-                  setPrefs({ ...prefs, webSearchBackend: e.target.value })
-                }
-              >
-                {["google", "openai", "deepseek", "minimax", "zai"].map((p) => (
-                  <option key={p}>{p}</option>
-                ))}
-              </select>
-            </label>
             <label>
               语义判断服务
               <select
@@ -503,7 +493,7 @@ export function Panel({ api }: { api: any }) {
             </label>
           </div>
           <p>
-            <button onClick={save}>保存工具设置</button>
+            <button onClick={save}>保存判断设置</button>
           </p>
           <p aria-live="polite" className="yu-muted">
             {notice}
@@ -842,13 +832,13 @@ export const inject = [
   "sidebarRightTabs",
   "sidebarRight",
   "modelDirectories",
-  "commandUi",
 ];
 export async function apply(ctx: any) {
   installModelMenu(ctx);
   try {
     await installNoWorkspace(ctx);
     await installFallbackSettings(ctx);
+    await installSearchSettings(ctx);
     installOpenaiContextSettings(ctx);
     await ctx.remote.$mount(remoteInfo);
     await ctx.remote.$mount(providerRemoteInfo);
@@ -875,46 +865,6 @@ export async function apply(ctx: any) {
           api.providers = undefined;
         });
       });
-      ctx.effect(() =>
-        ctx.commandUi.decorate({
-          name: "websearch-backend",
-          available: () => true,
-          ui: {
-            kind: "popupSelect",
-            searchLabels: () => ({
-              placeholder: "选择搜索后端",
-              empty: "没有可用后端",
-              noResults: "没有匹配的后端",
-            }),
-            async options(session: any) {
-              const result = await native.searchBackend(session.sessionId);
-              if (!result.ok) throw new Error(result.error.message);
-              return [
-                ["google", "Google · Antigravity"],
-                ["openai", "OpenAI · Codex"],
-                ["deepseek", "DeepSeek"],
-                ["minimax", "MiniMax"],
-                ["zai", "ZAI · 智谱"],
-              ].map(([id, label]) => ({
-                id,
-                label,
-                active: result.value.backend === id,
-                detail: `${id} · 当前会话立即生效`,
-              }));
-            },
-            async onSelect(option: any, session: any) {
-              const result = await ctx.remote.commands.execute(
-                session.sessionId,
-                `/websearch-backend ${option.id}`,
-                [],
-              );
-              if (!result.ok) throw new Error(result.error.message);
-              if (!result.value || result.value.result.kind === "error")
-                throw new Error(result.value?.result.text ?? "指令不可用");
-            },
-          },
-        }),
-      );
       ctx.effect(() =>
         ctx.slots.inject("conversation.composer.dock", () =>
           ctx.slots.register(

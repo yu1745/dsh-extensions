@@ -53,42 +53,6 @@ export const remoteInfo = createTypertRemoteInfo({
         create: () => z.json(),
       },
     },
-    "yuQuota/searchBackend": {
-      service: "yuQuota",
-      invocation: { kind: "direct" },
-      parameters: [
-        {
-          name: "sessionId",
-          source: "json",
-          codec: {
-            mode: "strict",
-            typeSymbol: "@yu1745/dsh-extensions#SearchSessionId",
-            create: () =>
-              z
-                .string()
-                .regex(/^[a-zA-Z0-9_-]+$/)
-                .max(200),
-          },
-          strictCodec: {
-            mode: "strict",
-            typeSymbol: "@yu1745/dsh-extensions#SearchSessionId",
-            create: () =>
-              z
-                .string()
-                .regex(/^[a-zA-Z0-9_-]+$/)
-                .max(200),
-          },
-        },
-      ],
-      result: {
-        mode: "strict",
-        typeSymbol: "@yu1745/dsh-extensions#SearchBackend",
-        create: () =>
-          z.object({
-            backend: z.enum(["google", "openai", "deepseek", "minimax", "zai"]),
-          }),
-      },
-    },
     "yuQuota/preferences": {
       service: "yuQuota",
       invocation: { kind: "direct" },
@@ -112,13 +76,6 @@ export const remoteInfo = createTypertRemoteInfo({
             create: () =>
               z
                 .object({
-                  webSearchBackend: z.enum([
-                    "google",
-                    "openai",
-                    "deepseek",
-                    "minimax",
-                    "zai",
-                  ]),
                   classifier: z.object({
                     provider: z.enum(["typesafe", "openai", "openrouter"]),
                     model: z.string().min(1).max(200),
@@ -132,13 +89,6 @@ export const remoteInfo = createTypertRemoteInfo({
             create: () =>
               z
                 .object({
-                  webSearchBackend: z.enum([
-                    "google",
-                    "openai",
-                    "deepseek",
-                    "minimax",
-                    "zai",
-                  ]),
                   classifier: z.object({
                     provider: z.enum(["typesafe", "openai", "openrouter"]),
                     model: z.string().min(1).max(200),

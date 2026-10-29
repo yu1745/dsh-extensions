@@ -100,7 +100,7 @@ export function createBridge(ctx: any, options: any = {}) {
           if (!inv.rawInput.trim())
             return {
               kind: "success",
-              text: "用法：/websearch-backend google|openai|deepseek|minimax|zai；也可在额度与费用面板设置。",
+              text: "用法：/websearch-backend google|openai|deepseek|minimax|zai；全局默认在设置 → 网页搜索中修改。",
             };
           if (
             ![
