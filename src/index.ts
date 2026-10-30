@@ -1,6 +1,6 @@
 import { Service } from "@deepseek-ai/cordis";
 import z from "@deepseek-ai/schemastery";
-import { credentialRef, credentialKey } from "@deepseek-ai/dsh-credentials";
+import { credentialRef } from "@deepseek-ai/dsh-credentials";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import {
@@ -11,7 +11,7 @@ import {
   dataDir,
 } from "./state.js";
 export const name = "yu-extensions";
-export const inject = ["credentials"];
+export const inject = ["credentials", "typert"];
 export const Config = z.object({ importPi: z.boolean().default(false) });
 export class Extensions extends Service {
   active = { search: false, reader: false };
@@ -74,12 +74,8 @@ export async function importPi(ctx: any) {
       imported.push(id);
     }
   }
-  const codex = auth["openai-codex"];
-  if (codex?.type === "oauth")
-    await ctx.credentials.modifyRecord(
-      credentialKey("llm-pi-ai", "openai-codex"),
-      async (current: any) => current ?? { kind: "grant", payload: codex },
-    );
+  // openai-codex is deliberately NOT imported: its credentials are owned by
+  // the plugin's own device login (see codex-device-auth.ts).
   const old: any = readJson(join(pi, "settings.json"), {});
   const current = settings();
   updateSettings({
@@ -105,7 +101,9 @@ export async function importPi(ctx: any) {
 }
 export async function apply(ctx: any, config: any) {
   if (config.importPi) await importPi(ctx);
-  const { startCodexTokenSync } = await import("./codex-token-sync.js");
-  startCodexTokenSync(ctx);
+  // openai-codex credentials come only from the settings-page device login;
+  // nothing is read from ~/.codex, ~/.pi or the environment any more.
+  const { installCodexDeviceAuth } = await import("./codex-device-auth.js");
+  installCodexDeviceAuth(ctx);
   new Extensions(ctx);
 }

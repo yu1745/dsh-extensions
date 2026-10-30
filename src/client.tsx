@@ -5,6 +5,7 @@ import { installSearchSettings } from "./search-settings.js";
 import { installOpenaiContextSettings } from "./openai-context-settings.js";
 import { ProviderPanel } from "./provider-panel.js";
 import { providerRemoteInfo } from "./provider-remote.js";
+import { codexAuthRemoteInfo } from "./codex-auth-remote.js";
 import React, { useState, useEffect, useSyncExternalStore } from "react";
 import { remoteInfo } from "./remote.js";
 import { HistoryChart, type ChartRange } from "./quota-chart.js";
@@ -842,6 +843,7 @@ export async function apply(ctx: any) {
     installOpenaiContextSettings(ctx);
     await ctx.remote.$mount(remoteInfo);
     await ctx.remote.$mount(providerRemoteInfo);
+    await ctx.remote.$mount(codexAuthRemoteInfo);
     ctx.inject(["remote.yuQuota", "remote.commands"], (ctx: any) => {
       const native = ctx.remote.yuQuota;
       const api = {

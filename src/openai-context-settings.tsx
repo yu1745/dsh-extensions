@@ -15,6 +15,12 @@ export const openaiContextMessages = {
     save: 'Save', saving: 'Saving…', saved: 'Saved', unsaved: 'Unsaved changes', loading: 'Loading settings…',
     readonly: 'Settings are read-only.', reload: 'Reload', group: 'Global OpenAI context mode',
     externalChange: 'This setting changed elsewhere. Reload before saving; your unsaved choice is preserved.',
+    accountTitle: 'OpenAI Codex account', accountIntro: 'Manual device login shared by every openai-codex entry. Credentials are stored only here and never read from the codex CLI or any other file.',
+    login: 'Log in with device code', cancelLogin: 'Cancel login', logout: 'Log out',
+    loggedInAs: 'Logged in', accountLabel: 'Account', expiresLabel: 'Token expires',
+    anonymousState: 'Not logged in. openai-codex routes need a login before use.',
+    loginPending: 'Open the link and confirm this code to finish login:', openLink: 'Open login page',
+    loginFailed: 'Login failed', loggedOut: 'Logged out', loginStarted: 'Waiting for confirmation…',
   },
   zh: {
     title: 'OpenAI 上下文', intro: '手动选择全局默认方式，不自动探测能力或切换后端。',
@@ -27,6 +33,12 @@ export const openaiContextMessages = {
     save: '保存', saving: '保存中…', saved: '已保存', unsaved: '有未保存的修改', loading: '正在读取设置…',
     readonly: '设置为只读。', reload: '重新加载', group: '全局 OpenAI 上下文方式',
     externalChange: '此设置已在别处修改，请重新加载后再保存；当前未保存的选择暂时保留。',
+    accountTitle: 'OpenAI Codex 账号', accountIntro: '所有 openai-codex 项共享的手动 device 登录。凭证只保存在这里，不再从 codex CLI 或任何其他文件读取。',
+    login: '设备码登录', cancelLogin: '取消登录', logout: '退出登录',
+    loggedInAs: '已登录', accountLabel: '账号', expiresLabel: '令牌到期',
+    anonymousState: '未登录。openai-codex 相关条目需要先登录才能使用。',
+    loginPending: '打开链接并确认以下代码完成登录：', openLink: '打开登录页面',
+    loginFailed: '登录失败', loggedOut: '已退出登录', loginStarted: '等待确认…',
   },
 } as const;
 type MessageKey = keyof typeof openaiContextMessages.en;
@@ -35,7 +47,8 @@ type RemoteSpeed = 'standard' | 'fast';
 type SettingsValue = { mode: Mode; remoteSpeed: RemoteSpeed };
 type Snapshot = SettingsValue & { revision: number; writable: boolean };
 type Api = { read(): Promise<Snapshot>; save(value: Mode | SettingsValue, revision: number): Promise<Snapshot>; subscribe?(notify: () => void): () => void };
-type Props = { api: Api; locale?: string; t?: (key: MessageKey) => string };
+type AuthApi = { status(): Promise<any>; login(): Promise<any>; cancel(): Promise<any>; logout(): Promise<any> };
+type Props = { api: Api; locale?: string; t?: (key: MessageKey) => string; auth?: AuthApi };
 
 const css = `
 .yu-openai-context{max-width:820px;margin:0 auto;padding:28px 24px 48px;color:var(--dsw-alias-label-primary);font-size:14px;line-height:1.6}
@@ -45,11 +58,77 @@ const css = `
 .yu-openai-context button{font:inherit;color:var(--dsw-alias-label-primary);border:1px solid var(--dsw-alias-border-l1);background:var(--dsw-alias-bg-layer-1);border-radius:7px;padding:6px 12px;cursor:pointer}
 .yu-openai-context button:disabled{opacity:.5;cursor:default}.yu-openai-context button:focus-visible,.yu-openai-context input:focus-visible{outline:2px solid var(--dsw-alias-brand-primary);outline-offset:2px}
 .yu-openai-context .actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:16px}.yu-openai-context .error{color:var(--dsw-alias-state-error-primary)}.yu-openai-context .status{color:var(--dsw-alias-state-success-primary)}
+.yu-openai-context .yu-openai-context-account{margin-top:28px;padding-top:4px;border-top:1px solid var(--dsw-alias-border-l1)}.yu-openai-context .yu-openai-context-code code{font-size:17px;letter-spacing:2px;font-weight:600}
+.yu-openai-context a{color:var(--dsw-alias-brand-primary)}
 @media(max-width:600px){.yu-openai-context{padding:20px 14px}}
 `;
 
+/** Any wire shape becomes a plain, render-safe view; errors become strings. */
+function normalizeAuthState(value: any): any {
+  const error = value?.error;
+  return {
+    state: typeof value?.state === 'string' ? value.state : 'anonymous',
+    accountId: typeof value?.accountId === 'string' ? value.accountId : undefined,
+    expires: typeof value?.expires === 'number' ? value.expires : undefined,
+    userCode: typeof value?.userCode === 'string' ? value.userCode : undefined,
+    verificationUri: typeof value?.verificationUri === 'string' ? value.verificationUri : undefined,
+    expiresAt: typeof value?.expiresAt === 'number' ? value.expiresAt : undefined,
+    error: error === undefined || error === null ? '' : typeof error === 'object' ? String(error.message ?? JSON.stringify(error)) : String(error),
+  };
+}
+
+/** One shared manual device login for every openai-codex entry. */
+function CodexAccountSection({ auth, locale = 'en', t }: { auth: AuthApi; locale?: string; t?: (key: MessageKey) => string }) {
+  const messages = locale.toLowerCase().startsWith('zh') ? openaiContextMessages.zh : openaiContextMessages.en;
+  const label = (key: MessageKey) => t?.(key) ?? messages[key];
+  const [state, setState] = useState<any>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const [notice, setNotice] = useState('');
+  const [generation, reload] = useState(0);
+  const pending = state?.state === 'pending';
+  useEffect(() => {
+    let active = true;
+    auth.status().then(value => { if (active) setState(normalizeAuthState(value)); })
+      .catch(e => { if (active) setError(e instanceof Error ? e.message : String(e)); });
+    return () => { active = false; };
+  }, [auth, generation]);
+  useEffect(() => {
+    if (!pending) return;
+    const timer = setInterval(() => reload(value => value + 1), 3000);
+    return () => clearInterval(timer);
+  }, [pending]);
+  async function run(action: () => Promise<any>, done?: string) {
+    if (busy) return;
+    setBusy(true); setError(''); setNotice(done ? label('loginStarted') : '');
+    try { setState(normalizeAuthState(await action())); if (done) setNotice(label(done)); }
+    catch (e) { setError(e instanceof Error ? e.message : String(e)); }
+    finally { setBusy(false); }
+  }
+  return <section className="yu-openai-context-account" aria-label={label('accountTitle')}>
+    <h3>{label('accountTitle')}</h3>
+    <p className="muted">{label('accountIntro')}</p>
+    {error && <p className="error" role="alert">{error}</p>}
+    {state?.error && <p className="error" role="alert">{label('loginFailed')}: {state.error}</p>}
+    {notice && <p className="status" role="status">{notice}</p>}
+    {state && !pending && (state.state === 'logged-in'
+      ? <p className="muted">{label('loggedInAs')} · {label('accountLabel')}: <code>{String(state.accountId ?? '')}</code>
+          {typeof state.expires === 'number' && <> · {label('expiresLabel')}: {new Date(state.expires).toLocaleString()}</>}</p>
+      : <p className="muted">{label('anonymousState')}</p>)}
+    {state && pending && <p className="muted">
+      {label('loginPending')} <strong className="yu-openai-context-code"><code>{String(state.userCode ?? '')}</code></strong><br />
+      {state.verificationUri && <a href={String(state.verificationUri)} target="_blank" rel="noreferrer">{label('openLink')}</a>}
+    </p>}
+    <div className="actions">
+      {!pending && <button disabled={busy} onClick={() => run(() => auth.login())}>{label('login')}</button>}
+      {pending && <button disabled={busy} onClick={() => run(() => auth.cancel())}>{label('cancelLogin')}</button>}
+      {state?.state === 'logged-in' && <button disabled={busy} onClick={() => run(() => auth.logout(), 'loggedOut')}>{label('logout')}</button>}
+    </div>
+  </section>;
+}
+
 /** Unregistered settings.section view. The owner supplies a stable API and locale. */
-export function OpenaiContextSettings({ api, locale = 'en', t }: Props) {
+export function OpenaiContextSettings({ api, locale = 'en', t, auth }: Props) {
   const messages = locale.toLowerCase().startsWith('zh') ? openaiContextMessages.zh : openaiContextMessages.en;
   const label = (key: MessageKey) => t?.(key) ?? messages[key];
   const [state, setState] = useState<Snapshot | null>(null);
@@ -113,6 +192,7 @@ export function OpenaiContextSettings({ api, locale = 'en', t }: Props) {
         {dirty && <span className="muted">{label('unsaved')}</span>}
         {notice && <span className="status" role="status">{notice}</span>}
       </div>
+      {auth && <CodexAccountSection auth={auth} locale={locale} t={t} />}
     </>}
     {error && <button disabled={busy} onClick={() => { setConflict(false); setNotice(''); reload(value => value + 1); }}>{label('reload')}</button>}
   </section>;
@@ -132,9 +212,34 @@ export function installOpenaiContextSettings(ctx: any) {
       return () => { removeZh(); removeEn(); };
     });
     const t = locale.bind(namespace);
+    // The shared openai-codex device login lives on the same settings page.
+    // Optional: the section is hidden when the auth remote is unavailable.
+    let auth: AuthApi | undefined;
+    if (typeof scope.inject === 'function')
+      scope.inject(["remote.yuCodexAuth"], (authScope: any) => {
+        const remote = authScope.remote.yuCodexAuth;
+        // Client stubs may hand back the raw {ok, value|error} envelope;
+        // unwrap it so the component always receives the plain view.
+        const unwrap = async (call: () => PromiseLike<any>) => {
+          const result = await call();
+          if (result && typeof result === 'object' && 'ok' in result) {
+            if (result.ok) return result.value;
+            const message = result.error?.message ?? result.error ?? 'codex auth request failed';
+            throw new Error(typeof message === 'string' ? message : JSON.stringify(message));
+          }
+          return result;
+        };
+        auth = {
+          status: () => unwrap(() => remote.status()),
+          login: () => unwrap(() => remote.login()),
+          cancel: () => unwrap(() => remote.cancel()),
+          logout: () => unwrap(() => remote.logout()),
+        };
+        authScope.on("dispose", () => { auth = undefined; });
+      });
     function View() {
       useSyncExternalStore((notify: () => void) => locale.subscribe(notify), () => locale.getSnapshot(), () => locale.getSnapshot());
-      return <OpenaiContextSettings api={api} t={t} />;
+      return <OpenaiContextSettings api={api} t={t} auth={auth} />;
     }
     scope.effect(() => {
       let unmount: (() => void) | undefined;
