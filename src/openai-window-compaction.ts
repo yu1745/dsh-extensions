@@ -52,7 +52,7 @@ export default class OpenaiWindowCompaction extends BasicCompactionEngine {
     // A reloaded or retired instance must give up its Agents: the composing
     // runtime keeps its records alive, and the owner re-attaches the engine
     // that is actually composed once this context is gone.
-    ctx.on("dispose", () => {
+    ctx.effect(() => () => {
       this.retired = true;
       for (const agent of this.served)
         try {

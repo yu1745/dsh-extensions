@@ -25,7 +25,13 @@ function harness(mode) {
   const listeners = {}, controller = new AbortController();
   const owner = { enabled: () => true, alphaActive: () => active, remoteMode: () => remote, state: () => state,
     transports: new WeakMap(), verifyHandoff: async () => true, attach() {}, sync() {}, remind() {} };
-  const ctx = { reflect: { provide() {} }, yuOpenaiWindows: owner, get: () => undefined,
+  const ctx = { reflect: { provide() {} },
+    effect(setup) {
+      const cleanup = setup(); let active = true;
+      const stop = () => { if (active) { active = false; remove(); cleanup?.(); } };
+      const remove = this.on('dispose', stop);
+      return stop;
+    }, yuOpenaiWindows: owner, get: () => undefined,
     on(name, fn) { (listeners[name] ??= []).push(fn); return () => {}; },
     llm: { resolveModelInfo: async () => ({ context: { contextWindow: 100000 }, defaultMaxTokens: 1000 }) },
     tokenMeter: { measure(s) { return { totalTokens: 4000, nodes: s.surface.nodes.map(seq => ({ seq, heuristicTokens: 4000 })) }; }, estimateMessage: () => 20 },

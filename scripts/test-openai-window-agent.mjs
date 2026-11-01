@@ -72,6 +72,7 @@ const adapter = new PiAiAdapter({
 });
 const ctx = {
   reflect: { provide() {} },
+  effect(setup) { const stop = setup(); cleanups.push(stop); return stop; },
   on: (event, fn) => {
     (on[event] ??= []).push(fn);
     return () => {};

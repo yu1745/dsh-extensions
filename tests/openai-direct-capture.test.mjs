@@ -81,7 +81,13 @@ async function setup(provider = 'openai-codex', model = 'gpt-6-astra', skipDaily
 test('real owner delegates snapshot capture to the current registered adapter', async () => {
   const e = await setup('openai-codex', 'gpt-6.1-terra');
   const disposers = [];
-  const ctx = { reflect: { provide() {} }, fiber: e.ownerCtx.fiber, llm: e.llm, agents: {},
+  const ctx = { reflect: { provide() {} },
+    effect(setup) {
+      const cleanup = setup(); let active = true;
+      const stop = () => { if (active) { active = false; remove(); cleanup?.(); } };
+      const remove = this.on('dispose', stop);
+      return stop;
+    }, fiber: e.ownerCtx.fiber, llm: e.llm, agents: {},
     sessionProjections: { register() {} }, sessions: { flush: async () => true }, tokenMeter: { measure: () => ({ totalTokens: 0, nodes: [] }) },
     on(name, fn) { if (name === 'dispose') { disposers.push(fn); return () => {}; } if (name === 'llm/adapters-updated') return e.ownerCtx.on(name, fn); return () => {}; } };
   try {
@@ -302,7 +308,13 @@ function coldOwner(e, session = Session.create('cold-owner-session')) {
   }
   let state = initialWindow(session.header), scanned = 0, flushes = 0;
   const disposers = [];
-  const ctx = { reflect: { provide() {} }, fiber: e.ownerCtx.fiber, llm: e.llm, agents: {},
+  const ctx = { reflect: { provide() {} },
+    effect(setup) {
+      const cleanup = setup(); let active = true;
+      const stop = () => { if (active) { active = false; remove(); cleanup?.(); } };
+      const remove = this.on('dispose', stop);
+      return stop;
+    }, fiber: e.ownerCtx.fiber, llm: e.llm, agents: {},
     get: () => undefined,
     sessionProjections: { register() {}, stateOf() { for (const event of session.snapshotEvents(scanned)) state = foldWindow(state, event); scanned = session.seq; return state; } },
     sessions: { async flush() { flushes++; return true; } },

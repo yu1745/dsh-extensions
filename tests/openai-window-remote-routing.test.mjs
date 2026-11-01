@@ -35,7 +35,13 @@ function harness(route = { provider: 'openai-codex', model: 'gpt-test' }) {
     },
   };
   const ctx = {
-    reflect: { provide() {} }, yuOpenaiWindows: owner,
+    reflect: { provide() {} },
+    effect(setup) {
+      const cleanup = setup(); let active = true;
+      const stop = () => { if (active) { active = false; remove(); cleanup?.(); } };
+      const remove = this.on('dispose', stop);
+      return stop;
+    }, yuOpenaiWindows: owner,
     on: (name, fn) => { (listeners[name] ??= []).push(fn); return () => {}; },
     get: (name) => name === 'agentPresets' && selectedOwner ? { serviceFor: () => selectedOwner } : undefined,
   };

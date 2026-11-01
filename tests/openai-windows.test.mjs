@@ -36,6 +36,12 @@ function harness(provider = "openai-codex") {
     scopeEvents = {};
   const ctx = {
     reflect: { provide() {} },
+    effect(setup) {
+      const cleanup = setup(); let active = true;
+      const stop = () => { if (active) { active = false; remove(); cleanup?.(); } };
+      const remove = this.on('dispose', stop);
+      return stop;
+    },
     on: (name, fn) => {
       (events[name] ??= []).push(fn);
       return () => {};

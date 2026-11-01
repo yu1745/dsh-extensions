@@ -1,5 +1,5 @@
 import { Service } from "@deepseek-ai/cordis";
-import { sameService } from "./cordis-service-identity.mjs";
+import { sameService, serviceIdentity } from "./cordis-service-identity.mjs";
 import z from "@deepseek-ai/schemastery";
 import { PiAiAdapter } from "@deepseek-ai/dsh-llm-pi-ai";
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
@@ -293,7 +293,7 @@ export default class OpenaiWindows extends Service {
     });
     this.remoteCompaction = controller;
     ctx.sessionProjections.register(windowProjection);
-    ctx.on("dispose", installWindowAdapter());
+    ctx.effect(() => installWindowAdapter());
     ctx.on("agent/request", async ({ agent }: any, next: Function) => {
       const config = await next();
       if (this.agents.has(agent.id)) {
@@ -356,7 +356,8 @@ export default class OpenaiWindows extends Service {
     ctx.on("agent/status", ({ agent, status }: any) => {
       if (status === "idle") this.onIdleBoundary(agent);
     });
-    ctx.on("dispose", () => {
+    // Cordis 4 owns teardown through effects; "dispose" is not a lifecycle event.
+    ctx.effect(() => () => {
       for (const item of [...this.agents.values()]) item.stop();
     });
     // agent/created does not replay when this owner reloads. Install guards for
@@ -440,7 +441,9 @@ export default class OpenaiWindows extends Service {
   }
   /** Guard capture and remote fetch against route, owner and auth changes. */
   openRemoteLease({ agent, identity, signal, bootstrap = false }: any) {
-    const ctx: any = this.ctx, fiber = ctx.fiber, llm = ctx.llm;
+    // Service method reads can shadow this.ctx with the caller's context.
+    // A lease belongs to the owner fiber even when opened through a proxy.
+    const ctx: any = serviceIdentity(this).ctx, fiber = ctx.fiber, llm = ctx.llm;
     const initialRoute = { ...currentRoute(agent) }, initialMode = this.configuredMode();
     const initialSpeed = this.configuredRemoteSpeed();
     const initialTransport = this.transports.get(agent), session = agent.session;
@@ -465,7 +468,8 @@ export default class OpenaiWindows extends Service {
       for (const stop of disposers.splice(0)) try { stop(); } catch {}
     };
     try {
-      for (const event of ["llm/adapters-updated", "credentials/record-updated", "credentials/reference-updated", "dispose"]) {
+      disposers.push(ctx.effect(() => invalidate));
+      for (const event of ["llm/adapters-updated", "credentials/record-updated", "credentials/reference-updated"]) {
         const stop = ctx.on(event, invalidate);
         if (typeof stop !== "function") throw new Error("Remote lease subscription unavailable");
         disposers.push(stop);
@@ -484,7 +488,7 @@ export default class OpenaiWindows extends Service {
         try {
           combined.throwIfAborted();
           const route = currentRoute(agent), transport = this.transports.get(agent);
-          if (disposed || agent.session !== session || this.ctx !== ctx || ctx.fiber !== fiber || fiber.state !== FIBER_ACTIVE || fiber.uid == null ||
+          if (disposed || agent.session !== session || serviceIdentity(this).ctx !== ctx || ctx.fiber !== fiber || fiber.state !== FIBER_ACTIVE || fiber.uid == null ||
               this.agents.get(agent.id) !== item || !sameService(item.engine, engine) || !engineIsLive(engine) ||
               !engine.remoteServes?.(agent) || this.remoteCompaction !== service || !this.remoteMode(agent) ||
               this.configuredMode() !== initialMode || this.configuredRemoteSpeed() !== initialSpeed ||

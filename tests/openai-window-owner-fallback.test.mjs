@@ -30,7 +30,13 @@ function harness(options = {}) {
   const definitions = new Map(), sections = [], contexts = [], listeners = {}, scopeListeners = {};
   const snapshot = {}, adapter = { current: () => snapshot };
   const ctx = {
-    reflect: { provide() {} }, fiber: { state: 2, uid: 'test-owner' }, agents: {},
+    reflect: { provide() {} },
+    effect(setup) {
+      const cleanup = setup(); let active = true;
+      const stop = () => { if (active) { active = false; remove(); cleanup?.(); } };
+      const remove = this.on('dispose', stop);
+      return stop;
+    }, fiber: { state: 2, uid: 'test-owner' }, agents: {},
     llm: { adapters: new Map([['openai-codex', { adapter }]]), resolveModelInfo: async () => ({ context: { contextWindow: 100000 }, defaultMaxTokens: 1000 }) },
     sessionProjections: { register() {}, stateOf(s) { for (const e of s.snapshotEvents(scanned)) state = foldWindow(state, e); scanned = s.seq; return state; } },
     sessions: { async flush() { return true; } },

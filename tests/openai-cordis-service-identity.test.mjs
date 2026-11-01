@@ -6,6 +6,10 @@ import { pathToFileURL } from 'node:url';
 import { basename, dirname, resolve } from 'node:path';
 import { buildSync } from 'esbuild';
 import { Context, Service, symbols } from '@deepseek-ai/cordis';
+import { PiAiAdapter } from '@deepseek-ai/dsh-llm-pi-ai';
+import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
+import Projections from '@deepseek-ai/dsh-session-projection';
+import { createScope, scopeOf } from '@deepseek-ai/dsh-scope';
 import { Session } from '@deepseek-ai/dsh-session';
 import { createUserMessage } from '@deepseek-ai/dsh-llm';
 import { sameService } from '../src/cordis-service-identity.mjs';
@@ -132,4 +136,62 @@ test('real engine replacement during remote prepare still rejects without replac
   await assert.rejects(h.ctx.get('compaction').compactNow(h.agent, signal()), e => e.code === 'transaction-failed' && e.replaced === false);
   assert.deepEqual(h.session.surface.nodes, [h.original]);
   assert.equal(h.session.snapshotEvents().some(e => e.type === 'compaction/summary'), false);
+});
+
+// Real fibers and scoped prompt registries: mocks emitting a synthetic
+// "dispose" event hide leaked registrations across owner reloads.
+test('owner reload releases real scoped prompts and keeps existing agents attachable', async t => {
+  const ctx = new Context();
+  t.after(() => ctx.fiber.dispose());
+  let agents = [];
+  class Agents extends Service {
+    constructor(ctx) { super(ctx, 'agents'); }
+    list() { return agents; }
+  }
+  new Agents(ctx);
+  const snapshot = {};
+  ctx.provide('llm', { adapters: new Map([['openai-codex', { adapter: { current: () => snapshot } }]]) });
+  ctx.provide('sessions', {});
+  ctx.provide('tokenMeter', {});
+  ctx.provide('tools', { presentAs: () => () => {}, register: () => () => {} });
+  await ctx.plugin(SystemPrompt, {});
+  await ctx.plugin(Projections);
+  let scope;
+  await ctx.plugin({ inject: ['systemPrompt', 'tools'], apply(c) { scope = createScope(c, {}); } });
+  const agent = { id: 'reload-agent', ctx: scope.ctx, session: Session.create('reload-agent'),
+    status: 'idle', options: { provider: 'openai-codex', model: 'gpt-test' } };
+  agents = [agent];
+  const promptPresent = () => ctx.get('systemPrompt').layers.peek(scopeOf(agent.ctx))?.sections.has('yu:openai-windows') ?? false;
+  const originalAdapter = PiAiAdapter.prototype.streamWithSnapshot;
+  for (let i = 0; i < 3; i++) {
+    const fiber = await ctx.plugin(Owner, { mode: 'remote' });
+    assert.equal(fiber.state, 2);
+    assert.equal(promptPresent(), true);
+    const owner = ctx.get('yuOpenaiWindows');
+    owner.attach(agent, { [Symbol.for('@yu1745/dsh-extensions/openai-window-engine')]: true,
+      ctx, remoteServes: () => true });
+    owner.recordTransport(agent, { identity: 'test-backend' }, agent.options);
+    const lease = owner.openRemoteLease({ agent, identity: { ...agent.options, backendId: 'test-backend' } });
+    assert.equal(lease.signal.aborted, false);
+    await fiber.dispose();
+    assert.equal(lease.signal.aborted, true, 'unload cancels in-flight compaction leases');
+    lease.dispose();
+    assert.equal(PiAiAdapter.prototype.streamWithSnapshot, originalAdapter, 'unload releases adapter wrapper');
+    assert.equal(promptPresent(), false, 'owner disposal must clean agent-owned registrations');
+  }
+});
+
+test('engine real fiber disposal retires and detaches its served agents', async t => {
+  const h = harness(t);
+  // A separate isolated root keeps the existing harness service untouched.
+  const ctx = new Context();
+  t.after(() => ctx.fiber.dispose());
+  let detached = 0;
+  for (const name of Engine.inject) ctx.provide(name, name === 'yuOpenaiWindows' ? { detach() { detached++; } } : {});
+  const fiber = await ctx.plugin(Engine, { auto: false });
+  const engine = ctx.get('compaction');
+  engine.trackAgent(h.agent);
+  await fiber.dispose();
+  assert.equal(engine.isRetired(), true);
+  assert.equal(detached, 1);
 });
