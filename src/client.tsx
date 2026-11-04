@@ -17,6 +17,7 @@ const labels: any = {
   "zai-coding-cn": "GLM",
   "minimax-cn": "MiniMax",
   "openai-codex": "OpenAI Codex",
+  "opencode-go": "OpenCode Go",
   antigravity: "Antigravity",
 };
 const money = (n: number) =>
@@ -322,6 +323,11 @@ export function Panel({ api }: { api: any }) {
                         </strong>
                       </div>
                     </div>
+                  )}
+                  {id === "opencode-go" && item?.payload && (
+                    <p className="yu-muted">
+                      订阅剩余额度{typeof item.payload.useBalance === "boolean" ? ` · 超限使用余额：${item.payload.useBalance ? "已开启" : "未开启"}` : ""}
+                    </p>
                   )}
                   {lines.length > 0 && (
                     <HistoryChart

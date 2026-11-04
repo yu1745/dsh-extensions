@@ -7,13 +7,15 @@
 | `yu-web-search` | Google Antigravity、OpenAI Codex、DeepSeek、MiniMax、ZAI 五后端，保留各自原生参数 |
 | `yu-web-reader` | Playwright 渲染、ARIA 提取、动态加载判断、Cloudflare 处理、截图与 DSH 附件 |
 | `yu-providers` | CodeBuddy、Antigravity 模型、浏览器登录与 DSH 凭据自动刷新 |
-| `yu-quota` | 五源额度、余额与历史曲线；Codex 跨设备账本；本机和原生子代理费用；底栏会话计费 |
+| `yu-quota` | 六源额度、余额与历史曲线；Codex 跨设备账本；本机和原生子代理费用；底栏会话计费 |
 | `yu-codex-fast` | 会话级 `/fast`、`/ultrafast`、`/codex-speed`；子会话继承创建时快照 |
 | `yu-model-fallback` | 独立设置页配置单模型优先级；额度耗尽顺位回退，恢复后优先回到手动首选模型 |
 | `yu-openai-windows` | 在 DSH 设置中全局手动选择 OpenAI notes/history 滚窗或远程压缩；其他模型沿用 DSH 基础 compact |
 | `yu-no-workspace` | 全局新对话默认使用独立目录，形式上显示“不在工作区工作”；每次创建真实子目录与注册工作区 |
 
-额度来源为 DeepSeek、GLM、MiniMax、OpenAI Codex、Antigravity。后台在 DSH 运行期间每分钟刷新，不依赖浏览器打开；同一个 DSH home 的多个进程共用轮询锁。
+额度来源为 DeepSeek、GLM、MiniMax、OpenAI Codex、Antigravity、OpenCode Go。后台在 DSH 运行期间每分钟刷新，不依赖浏览器打开；同一个 DSH home 的多个进程共用轮询锁。
+
+OpenCode Go 使用 DSH 的 `opencode-go` 凭据（或独立的 `OPENCODE_GO_API_KEY`，其次为默认 `OPENCODE_API_KEY`），不读取 `opencode` 的凭据记录。通过[官方用量接口](https://github.com/anomalyco/opencode/pull/16513)显示 5h、周、月剩余额度、重置时间、历史曲线及是否允许超限使用余额；该接口不返回 Zen 余额金额。
 
 ## 安装
 

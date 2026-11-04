@@ -18,6 +18,7 @@ import { fetchGLM } from "./vendor/quota-footer/providers/glm.js";
 import { fetchMM } from "./vendor/quota-footer/providers/minimax.js";
 import { fetchCodex } from "./vendor/quota-footer/providers/codex.js";
 import { fetchAntigravity } from "./vendor/quota-footer/providers/antigravity.js";
+import { fetchOpenCodeGo } from "./opencode-go-quota.js";
 import { shortHash } from "./vendor/quota-footer/utils.js";
 import {
   requestCodexJson,
@@ -40,6 +41,7 @@ const sources: Record<string, (key: string) => Promise<any>> = {
   "minimax-cn": fetchMM,
   "openai-codex": fetchCodex,
   antigravity: fetchAntigravity,
+  "opencode-go": fetchOpenCodeGo,
 };
 
 /** One process polls for the whole DSH home; a crashed owner expires after 30s. */
@@ -218,7 +220,7 @@ export class Quota extends TypertRemoteService {
     this.importHistory();
     this.timer = setInterval(() => this.startTick(), 60000);
     this.timer.unref();
-    ctx.on("dispose", async () => {
+    ctx.effect(() => async () => {
       this.stopped = true;
       clearInterval(this.timer);
       await this.task;

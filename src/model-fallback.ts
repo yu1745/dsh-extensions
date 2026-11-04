@@ -26,6 +26,13 @@ export class ModelFallback extends TypertRemoteService {
   private transitions = new WeakSet<object>();
   private switching = new Set<string>();
   private cursors = new Map<string, { route: Route; changedAt: number }>();
+  private unsupportedWarned = new Set<string>();
+  /**
+   * 0.2.2-alpha.3 起宿主不再提供 `selectionFor(agent).assembled` 这个记账位
+   * （它自己在 agent/pre-step 里比对 requestHeader 注入切换提示）。
+   * 本插件仍需要知道“我已经把哪个选择折进过提示词装配”，所以自己持有。
+   */
+  private assembledMarker = new WeakMap<object, Selection>();
   constructor(ctx: any) {
     super(ctx, "yuModelFallback");
     ctx.effect(() =>
@@ -40,21 +47,25 @@ export class ModelFallback extends TypertRemoteService {
     // DSH's native model-selection controller keeps prompt, pending selection,
     // durable request headers, and the UI on the same route. Do not call the
     // public selectModel API here: it also overwrites the user's global default.
-    const owner = ctx.sessionController.agents;
-    if (
-      typeof owner?.selectionFor !== "function" ||
-      typeof owner?.selectForNextRequest !== "function"
-    )
-      throw new Error(
-        "This DSH version does not expose session-local model selection for automatic fallback",
-      );
+    //
+    // 0.2.2-alpha.3 适配（2026-11-04）：会话内选择不再挂在
+    // `sessionController.agents.selectionFor()/selectForNextRequest()` 上（这两个方法
+    // 已从 dsh-api-session-controller 移除），而是 Agent 自带的 `agent.model`
+    // 这一面：`current()` 读「已记录的 pending ?? lastUsed，再退到实时路由」，
+    // `select(route)` 追加一条 durable `model/selection` 事件、**不碰全局默认**，
+    // 与旧的 selectForNextRequest 语义一致。宿主自己也在 agent/pre-step 里比较
+    // requestHeader 并注入「模型已切换」提示，所以旧代码手写的 `assembled`
+    // 记账不再需要（那是 rc.5 里宿主自己的字段）。
+    // 构造期不再抛错：能力缺失改为在**首次遇到该形态的 agent 时**告警并跳过，
+    // 这样扩展不会整条装配失败，功能也不会在支持的宿主上静默丢失。
     ctx.on(
       "system-prompt/assemble",
       async (_assembly: any, context: any, next: Function) => {
         const agent = context.agent;
         if (!this.managedAgent(agent) || !fallbackConfig().enabled)
           return next();
-        const current = owner.selectionFor(agent).current;
+        const current = this.currentSelection(agent);
+        if (current === undefined) return next();
         const preferred = this.preferred(agent, current);
         const selected = await this.choose(preferred, context.signal);
         if (selected && !sameRoute(current, selected))
@@ -71,7 +82,7 @@ export class ModelFallback extends TypertRemoteService {
           return proposed;
         const config = fallbackConfig();
         if (!config.enabled) return proposed;
-        const current = owner.selectionFor(payload.agent).current ?? proposed;
+        const current = this.currentSelection(payload.agent) ?? proposed;
         const preferred = this.preferred(payload.agent, current);
         const series = this.series(payload.agent, payload.turn, payload.step);
         const selected = await this.choose(
@@ -118,7 +129,7 @@ export class ModelFallback extends TypertRemoteService {
           !routes(config).some((route) => sameRoute(route, failed))
         )
           return next();
-        const current = owner.selectionFor(payload.agent).current ?? failed;
+        const current = this.currentSelection(payload.agent) ?? failed;
         const preferred = this.preferred(payload.agent, current);
         const series = this.series(payload.agent, payload.turn, payload.step);
         series.tried.add(routeKey(failed));
@@ -158,6 +169,34 @@ export class ModelFallback extends TypertRemoteService {
       this.remember(session.id, { preferred: selected });
       this.cursors.delete(session.id);
     });
+  }
+  /**
+   * 读会话内当前选择（0.2.2 的 `agent.model.current()`）。
+   * 形态不符（宿主太旧 / agent 还没发布 model 面）时告警一次并返回 undefined，
+   * 调用方据此跳过本轮回退，而不是让整条 entry 装配失败。
+   */
+  private currentSelection(agent: any): Selection | undefined {
+    const model = agent?.model;
+    if (typeof model?.current !== "function") {
+      this.warnUnsupported(agent);
+      return undefined;
+    }
+    return this.selection(model.current());
+  }
+  private warnUnsupported(agent: any) {
+    const id = String(agent?.session?.id ?? "(unknown)");
+    if (this.unsupportedWarned.has(id)) return;
+    this.unsupportedWarned.add(id);
+    const warn = (this.ctx as any)?.logger?.warn?.bind((this.ctx as any).logger);
+    const message =
+      "yu-model-fallback: agent.model.current() 不可用，已跳过自动模型回退" +
+      `（session=${id}；这通常意味着宿主 DSH 低于 0.2.2 或该 agent 未发布 model 面）`;
+    if (warn) warn(message);
+    else console.error(message);
+  }
+  /** 自有记账位的读口（装配与测试都用它，替代被宿主删除的 selection.assembled）。 */
+  assembledOf(agent: any) {
+    return this.assembledMarker.get(agent);
   }
   private managedAgent(agent: any) {
     return Boolean(agent?.session && !agent.session.header.parentSession);
@@ -212,19 +251,25 @@ export class ModelFallback extends TypertRemoteService {
     return selected;
   }
   private install(agent: any, route: Selection) {
-    const owner = (this.ctx as any).sessionController.agents;
-    const preferred =
-      this.preferred(agent, owner.selectionFor(agent).current) ?? route;
+    // 防御：宿主没有 agent.model.select 时不做切换（已在 currentSelection 里告警过）
+    if (typeof agent?.model?.select !== "function") {
+      this.warnUnsupported(agent);
+      return;
+    }
+    const preferred = this.preferred(agent, this.currentSelection(agent)) ?? route;
     // Persist before emitting model/selection, so a restart cannot promote the
     // automatically selected backup into the user's preferred model.
     this.remember(agent.session.id, { preferred, automatic: route });
     this.switching.add(agent.session.id);
     try {
-      owner.selectForNextRequest(agent, route);
+      // 0.2.2：会话内选择 = agent.model.select(route)（只追加 model/selection 事件）
+      (agent as any).model.select(route);
     } finally {
       this.switching.delete(agent.session.id);
     }
-    owner.selectionFor(agent).assembled = route;
+    // 旧版这里写宿主字段 `selectionFor(agent).assembled = route`；0.2.2 宿主删掉了它，
+    // 切换提示改由宿主在 agent/pre-step 比对 requestHeader 生成，本插件改用自有 WeakMap。
+    this.assembledMarker.set(agent, route);
     this.transitions.add(agent);
     this.cursors.set(agent.session.id, { route, changedAt: Date.now() });
   }

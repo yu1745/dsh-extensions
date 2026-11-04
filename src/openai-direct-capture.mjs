@@ -17,7 +17,18 @@ const builtinCurrent = builtinAdapterPrototype.current;
 const builtinModelInfo = builtinAdapterPrototype.modelInfo;
 const builtinModelOf = builtinAdapterPrototype.modelOf;
 const builtinProfileOf = builtinAdapterPrototype.profileOf;
-const NATIVE_HASH = 'db114b4004045176f02c3eef0964321fe61473f11cd82b3e7088e5d286fad09b';
+// 指纹审计（2026-11-04，DSH 0.2.1-alpha.4 → 0.2.2-alpha.3 换代时重记）：
+//   trustedHashes 四项（current / modelInfo / modelOf / profileOf）两版**逐字节相同**
+//   （旧算法重算=旧值，新包重算=同一个值），所以那四条沿用不动 —— 这是本次重记可信的前提。
+//   只有 streamWithSnapshot 变了，全量差异 8 行，都是**参数管线加法**：不碰鉴权、
+//   不碰 snapshot 语义，方法签名仍是 (options, snapshot)：
+//     · toPiContext(..., updates.systemPromptUpdate === "in-history")  // 系统提示词落位开关
+//     · toPiContext({ …, maxRequestImages, imageOffloadCountQuantum }) // 镜像预算取自 profile
+//     · requestHeaders(profile.headers, options, model.baseUrl, this.config.prepareHeaders)
+//   最后一条**有行为含义**：请求头现在多过一层 prepareHeaders。守这条的是
+//   tests/openai-direct-capture.test.mjs 里“official OpenAI API payload and headers
+//   match normal SDK route”那组用例——重记哈希后它必须真的绿，不能只是换个常量。
+const NATIVE_HASH = 'b4a3fcd54df44e557cba3c5f76e7098e984322c0b614c217e87e9afd2fb41199';
 const nativeHash = () => createHash('sha256').update(Function.prototype.toString.call(builtinRawMethod)).digest('hex');
 const trustedHashes = new Map([
   [builtinCurrent, '3d2c542efa5d21f251491972e8f993fbc2ccb0a22b075bb238dcf80935a337d4'],

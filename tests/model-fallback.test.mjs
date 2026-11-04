@@ -39,16 +39,45 @@ function reset() {
 function harness() {
   reset();
   const listeners = {},
-    selection = { current: a, assembled: a },
     events = [];
-  const owner = {
-    selectionFor: () => selection,
-    selectForNextRequest(agent, route) {
-      selection.current = route;
-      events.push({ ...route });
+  // 0.2.2-alpha.3 起会话内选择在 `agent.model` 这一面上（宿主 dsh-agent 的
+  // modelSelection 投影：pending ?? lastUsed，请求头落地时折叠掉 pending）。
+  // 这里按宿主的真实折叠语义模拟，而不是回到旧的 selectionFor()/selectForNextRequest()。
+  const projection = { pending: null, lastUsed: null };
+  let assembledSeed = null, markerAtSeed;
+  const toSel = (r) =>
+    r && r.provider && r.model
+      ? {
+          provider: r.provider,
+          model: r.model,
+          ...(r.reasoningEffort === undefined || r.reasoningEffort === null
+            ? {}
+            : { reasoningEffort: r.reasoningEffort }),
+        }
+      : null;
+  const sameSel = (x, y) =>
+    x === y ||
+    (!!x &&
+      !!y &&
+      x.provider === y.provider &&
+      x.model === y.model &&
+      (x.reasoningEffort ?? null) === (y.reasoningEffort ?? null));
+  const model = {
+    current() {
+      const recorded = projection.pending ?? projection.lastUsed;
+      if (recorded) return { ...recorded };
+      const live = toSel(agent.config);
+      return live ? { ...live } : undefined;
+    },
+    select(route) {
+      const next = toSel(route);
+      const recorded = projection.pending ?? projection.lastUsed;
+      if (sameSel(recorded, next)) return;
+      projection.pending = next;
+      events.push({ ...next });
       listeners["session/event"]?.(agent.session, {
         type: "model/selection",
-        data: route,
+        data: next,
       });
     },
   };
@@ -59,7 +88,7 @@ function harness() {
       listeners[name] = handler;
       return () => {};
     },
-    sessionController: { agents: owner },
+    // 旧宿主才有 sessionController.agents.selectionFor；本版本不需要
     typert: { register: () => () => {} },
     llm: {
       listProviders: () => [{ id: "openai-codex" }, { id: "other" }],
@@ -70,6 +99,31 @@ function harness() {
       resolveCallConfig: async (r) => ({ ...r }),
     },
   };
+  const selection = {
+    get current() {
+      return model.current();
+    },
+    set current(route) {
+      // 测试用的**静默**播种：只写投影的 pending，不发 session/event
+      // （手动选择要触发事件，测试会自己显式 emit，见 line ~408 那组）
+      projection.pending = toSel(route);
+    },
+    get assembled() {
+      // 0.2.2 起 `assembled` 记账位归插件自己所有（assembledOf）。语义按“谁最后写”：
+      //   · 播种之后插件没有再装配过（marker 未变）⇒ 用播种值；
+      //   · 否则用插件的 marker；两者都没有 ⇒ 退到上一次真实请求用的路由。
+      const marked = plugin.assembledOf?.(agent);
+      const value =
+        assembledSeed !== null && marked === markerAtSeed
+          ? assembledSeed
+          : (marked ?? assembledSeed ?? toSel(agent?.config));
+      return value ? { ...value } : undefined;
+    },
+    set assembled(value) {
+      assembledSeed = toSel(value);
+      markerAtSeed = plugin.assembledOf?.(agent);
+    },
+  };
   const plugin = new ModelFallback(ctx);
   const agent = {
     session: {
@@ -78,6 +132,7 @@ function harness() {
       requestHeader: () => ({ config: agent.config }),
     },
     config: a,
+    model,
   };
   const payload = {
     agent,
@@ -91,6 +146,12 @@ function harness() {
       async () => config,
     );
     agent.config = result;
+    // 宿主在请求头落地时折叠投影：lastUsed 更新，与之相同的 pending 退役
+    const used = toSel(result);
+    if (used) {
+      projection.lastUsed = used;
+      if (sameSel(projection.pending, used)) projection.pending = null;
+    }
     return result;
   };
   const fail = (failure = { code: "QUOTA", message: "Quota exhausted" }) =>
