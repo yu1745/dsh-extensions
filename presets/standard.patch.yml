@@ -1,6 +1,5 @@
-# DSH 0.2.2-alpha.3 preset (MIT); only two modules are swapped:
+# DSH 0.2.2-alpha.3 preset (MIT); only one module is swapped:
 #   @deepseek-ai/dsh-tool-web           -> @yu1745/dsh-extensions/web-tools
-#   @deepseek-ai/dsh-compaction-basic   -> @yu1745/dsh-extensions/openai-window-compaction
 # 重新同步记录（2026-11-04，对齐 0.2.2-alpha.3）：删掉已不存在的
 # `dsh-tool-subagent-control/list-agents` 行（list_agents 由主行注册）；tool-fs 补
 # `applyPatch: false`；tool-subagent 的 modelSelectionSettings 改名为
@@ -114,7 +113,7 @@
         toolResultPruner: true
       config:
       - id: compaction-basic
-        name: '@yu1745/dsh-extensions/openai-window-compaction'
+        name: '@deepseek-ai/dsh-compaction-basic'
       - id: command-compact
         name: '@deepseek-ai/dsh-command-compact'
       - id: tool-result-pruner

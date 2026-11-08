@@ -14,32 +14,34 @@
 # The expression is re-evaluated on every loader update, so this row can be
 # disposed after startup even when it loaded first. The engine elects itself per
 # Agent and detaches on disposal, which keeps that flip harmless.
-- id: compaction-basic
-  name: '@deepseek-ai/dsh-compaction-basic'
-  disabled: true
+# - id: compaction-basic
+#   name: '@deepseek-ai/dsh-compaction-basic'
+#   disabled: true
 - insert:
-    - id: yu-openai-windows
-      name: '@yu1745/dsh-extensions/openai-windows'
-    - id: yu-window-compaction-root
-      name: '@yu1745/dsh-extensions/openai-window-compaction'
-      disabled: !!js "!!ctx.get('agentPresets')"
+    # 已取消注册（代码保留，仅不再注册）：yu-openai-windows, yu-openai-window-compaction,
+    # yu-providers, yu-quota, yu-codex-fast, yu-model-fallback。
+    # - id: yu-openai-windows
+    #   name: '@yu1745/dsh-extensions/openai-windows'
+    # - id: yu-window-compaction-root
+    #   name: '@yu1745/dsh-extensions/openai-window-compaction'
+    #   disabled: !!js "!!ctx.get('agentPresets')"
     - id: yu-extensions
       name: '@yu1745/dsh-extensions'
     - id: yu-web-tools
       name: '@yu1745/dsh-extensions/web-tools'
       config:
         root: true
-    - id: yu-providers
-      name: '@yu1745/dsh-extensions/providers'
+    # - id: yu-providers
+    #   name: '@yu1745/dsh-extensions/providers'
     - id: yu-web-search
       name: '@yu1745/dsh-extensions/web-search'
     - id: yu-web-reader
       name: '@yu1745/dsh-extensions/web-reader'
-    - id: yu-quota
-      name: '@yu1745/dsh-extensions/quota'
-    - id: yu-codex-fast
-      name: '@yu1745/dsh-extensions/codex-fast'
-    - id: yu-model-fallback
-      name: '@yu1745/dsh-extensions/model-fallback'
+    # - id: yu-quota
+    #   name: '@yu1745/dsh-extensions/quota'
+    # - id: yu-codex-fast
+    #   name: '@yu1745/dsh-extensions/codex-fast'
+    # - id: yu-model-fallback
+    #   name: '@yu1745/dsh-extensions/model-fallback'
     - id: yu-no-workspace
       name: '@yu1745/dsh-extensions/no-workspace'

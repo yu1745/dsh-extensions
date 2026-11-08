@@ -844,131 +844,15 @@ export async function apply(ctx: any) {
   installModelMenu(ctx);
   try {
     await installNoWorkspace(ctx);
-    await installFallbackSettings(ctx);
     await installSearchSettings(ctx);
-    installOpenaiContextSettings(ctx);
-    await ctx.remote.$mount(remoteInfo);
-    await ctx.remote.$mount(providerRemoteInfo);
-    await ctx.remote.$mount(codexAuthRemoteInfo);
-    ctx.inject(["remote.yuQuota", "remote.commands"], (ctx: any) => {
-      const native = ctx.remote.yuQuota;
-      const api = {
-        providers: undefined as any,
-        snapshot: () => native.snapshot(),
-        speed: (sessionId: string) => native.speed(sessionId),
-        setFast: (sessionId: string, enabled: boolean) =>
-          native.setFast(sessionId, enabled),
-        preferences: () => native.preferences(),
-        savePreferences: ({ value }: any) => native.savePreferences(value),
-      };
-      ctx.inject(["remote.yuProviders"], (providerCtx: any) => {
-        const providers = providerCtx.remote.yuProviders;
-        api.providers = {
-          status: () => providers.status(),
-          loginStart: (id: string) => providers.loginStart(id),
-          loginAnswer: (answer: any) => providers.loginAnswer(answer),
-          loginCancel: (id: string) => providers.loginCancel(id),
-        };
-        providerCtx.on("dispose", () => {
-          api.providers = undefined;
-        });
-      });
-      ctx.effect(() =>
-        ctx.slots.inject("conversation.composer.dock", () =>
-          ctx.slots.register(
-            {
-              name: "conversation.composer.dock",
-              id: "yu-codex-fast",
-              order: 1000,
-              inject: (sessionId: string) => ({
-                api,
-                sessionId,
-                directory: ctx.modelDirectories.directoryFor(sessionId).store,
-              }),
-            },
-            CodexFastToggle,
-          ),
-        ),
-      );
-      ctx.effect(() =>
-        ctx.slots.inject("conversation.composer.dock", () =>
-          ctx.slots.register(
-            {
-              name: "conversation.composer.dock",
-              id: "yu-quota",
-              order: 90,
-              inject: (sessionId: string) => ({
-                api,
-                directory: ctx.modelDirectories.directoryFor(sessionId).store,
-                open: () => ctx.sidebarRight.openTabIn(sessionId, "yu-quota"),
-              }),
-            },
-            QuotaDock,
-          ),
-        ),
-      );
-      ctx.effect(() =>
-        ctx.slots.inject("conversation.composer.dock", () =>
-          ctx.slots.register(
-            {
-              name: "conversation.composer.dock",
-              id: "yu-session-cost",
-              order: 95,
-              inject: (sessionId: string) => ({
-                api,
-                sessionId,
-                open: () => ctx.sidebarRight.openTabIn(sessionId, "yu-quota"),
-              }),
-            },
-            SessionCostDock,
-          ),
-        ),
-      );
-      ctx.effect(() =>
-        ctx.slots.inject("conversation.chat.turnTail", () =>
-          ctx.slots.register(
-            {
-              name: "conversation.chat.turnTail",
-              id: "yu-worked-for",
-              order: 30,
-            },
-            TurnElapsed,
-          ),
-        ),
-      );
-      ctx.effect(() =>
-        ctx.sidebarRightTabs.register({
-          id: ID,
-          kind: "yu-quota",
-          priority: "extension",
-          title: () => "额度与费用",
-          guide: [
-            {
-              id: "quota",
-              order: 90,
-              title: () => "额度与费用",
-              description: () => "查看余额、余量曲线和本机费用",
-            },
-          ],
-        }),
-      );
-      ctx.effect(() =>
-        ctx.slots.inject("sidebar.right.pane.tab", () =>
-          ctx.slots.register(
-            { name: "sidebar.right.pane.tab", key: ID },
-            () => <Panel api={api} />,
-          ),
-        ),
-      );
-      ctx.effect(() =>
-        ctx.slots.inject("sidebar.right.pane.tab.title", () =>
-          ctx.slots.register(
-            { name: "sidebar.right.pane.tab.title", key: ID },
-            () => <span>额度与费用</span>,
-          ),
-        ),
-      );
-    });
+    // 以下插件已取消注册，其前端 UI 一并移除（实现代码保留，仅不再挂载）：
+    //   yu-model-fallback  -> installFallbackSettings
+    //   yu-openai-windows  -> installOpenaiContextSettings
+    //   yu-providers / yu-quota / yu-codex-fast
+    //     -> remote 挂载（remoteInfo / providerRemoteInfo / codexAuthRemoteInfo）
+    //        以及原 yuQuota 注入区块内的「额度与费用」页、会话计费、Codex Fast 开关与提供方登录面板。
+    //   yu-worked-for      -> TurnElapsed ("Worked for {time}s")
+    // 保留与上述插件无关的通用 UI：模型菜单、网页搜索设置、无工作区。
   } catch (error) {
     console.error("[dsh-extensions] client activation failed", error);
     throw error;
