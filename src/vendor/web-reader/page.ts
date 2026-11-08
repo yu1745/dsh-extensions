@@ -69,8 +69,10 @@ export const SAMPLE_SCRIPT = `(() => {
   const prose = roots.flatMap(root => [...root.querySelectorAll('p, pre, td, li')]).filter(element => !element.closest('nav, header, footer') && !consent.some(panel => panel.contains(element)))
     .filter(element => !element.querySelector('p, pre, td, li, ul, ol, [role="list"]') && nonLinked(element) > 80)
   const proseText = prose.map(clean).join(' ')
-  const contentEvidence = articles.some(element => nonLinked(element) > 80) || mains.some(element => element.querySelector('p, pre, table') && nonLinked(element) > 200) || proseText.length > 120
-  const text = article || main || proseText || body
+  const tables = roots.flatMap(root => [...root.querySelectorAll('table')])
+  const tableText = tables.map(clean).filter(Boolean).join(' ')
+  const contentEvidence = articles.some(element => nonLinked(element) > 80) || mains.some(element => element.querySelector('p, pre, table') && nonLinked(element) > 200) || proseText.length > 120 || tableText.length > 120
+  const text = article || main || proseText || tableText || body
   const pendingContent = roots.some(root => [...root.querySelectorAll('main[aria-busy="true"], article[aria-busy="true"], main [aria-busy="true"], article [aria-busy="true"], main .skeleton, article .skeleton, main [role="progressbar"], article [role="progressbar"]')].some(visible))
     || (text.length < 200 && /^(?:loading[.\\s…]*|加载中[.\\s…]*|please wait[.\\s…]*)$/i.test(text))
   const consentText = consent.filter(visible).map(element => element.innerText || element.textContent || '').join(' ').replace(/\\s+/g, ' ').trim()
