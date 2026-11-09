@@ -598,8 +598,10 @@ async function fetchPage(p: FetchParams, signal?: AbortSignal, jevService?: JevC
     } else {
       // A short ceiling on purpose: when `load` never fires (openai.com), this used to burn 5s
       // on every read. `waitForReadableContent` polls the DOM and returns as soon as real
-      // content exists, so it — not this — is the readiness gate.
-      await page.waitForLoadState("load", { timeout: Math.min(timeout, 2500) }).catch(() => {});
+      // content exists, so it — not this — is the readiness gate. One second is enough for
+      // the initial document/shell; waiting longer mainly penalizes heavy SPA pages such as
+      // YouTube without improving the final extraction.
+      await page.waitForLoadState("load", { timeout: Math.min(timeout, 1000) }).catch(() => {});
     }
     const afterLoadStateMs = mark();
 
