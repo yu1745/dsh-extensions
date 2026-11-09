@@ -366,7 +366,15 @@ function contextOpts() {
     // browser's native (self-consistent) user agent.
     ...(UA ? { userAgent: UA } : {}),
     locale: LOCALE,
-    viewport: { width: 1920, height: 1080 },
+    // 1280x1536 is deliberate, not arbitrary:
+    // - Jev rejects images whose long side exceeds 1536, so the old 1920x1080 viewport
+    //   could never be sent as a readiness screenshot.
+    // - 1280 wide keeps desktop layouts; 1024 drops most of MDN's ARIA tree
+    //   (75KB -> 29KB), and 720 triggers mobile loading pages on Douban/Bilibili.
+    // - 1536 tall shows enough of the page to judge blank/skeleton states visually.
+    // ARIA extraction at 1280x1536 is byte-for-byte comparable to 1920x1080 on the
+    // pages measured (GitHub, Wikipedia, MDN, Douban, BBC, Playwright docs).
+    viewport: { width: 1280, height: 1536 },
     javaScriptEnabled: true,
     extraHTTPHeaders: { "Accept-Language": `${LOCALE},${LOCALE.split("-")[0]};q=0.9,en;q=0.8` },
   };
@@ -1395,8 +1403,9 @@ export default function (pi: ExtensionAPI) {
           ? `  [full-page fallback: ${result.selection.candidate?.selector ?? "candidate"} covered ${Math.round((result.selection.coverage ?? 0) * 100)}%]`
           : `  [full-page fallback: ${result.selection.reason}]`
         : "";
-      const jevNote = result.loadVerdict?.jevScore !== undefined
-        ? `Jev Score: ${result.loadVerdict.jevScore.toFixed(2)}${result.loadVerdict.fallback ? " (fallback)" : ""}\n`
+      const jevNote = result.loadVerdict?.jevScore !== undefined || result.loadVerdict?.visualScore !== undefined
+        ? `Jev Score: ${result.loadVerdict?.jevScore !== undefined ? result.loadVerdict.jevScore.toFixed(2) : "-"}${result.loadVerdict?.fallback ? " (fallback)" : ""}` +
+          (result.loadVerdict?.visualScore !== undefined ? `  |  Visual Jev: ${result.loadVerdict.visualScore.toFixed(2)}` : "") + "\n"
         : "";
       const cfGivenUp = result.cloudflare?.reason === "stalled" || result.cloudflare?.reason === "max-rounds";
       const cfNote = result.cloudflare?.detected
@@ -1458,10 +1467,12 @@ export default function (pi: ExtensionAPI) {
           status: result.status,
           browser: activeChannel,
           jevScore: result.loadVerdict?.jevScore,
+          visualScore: result.loadVerdict?.visualScore,
           pageKind: result.loadVerdict.pageKind,
           blocked: result.loadVerdict.blocked,
           incomplete: result.loadVerdict.incomplete,
           verdicts: result.loadVerdict.verdicts,
+          visualVerdicts: result.loadVerdict?.visualVerdicts,
           decisionFallback: result.loadVerdict.fallback,
           durationMs: result.timing?.totalMs,
           timing: result.timing,

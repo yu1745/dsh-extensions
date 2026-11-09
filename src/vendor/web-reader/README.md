@@ -53,7 +53,8 @@ catalog-priced cost are included in the tool result; missing prices are not
 replaced with guessed fees.
 
 The header reports `Read status`, and tool details include `pageKind`, `blocked`,
-`incomplete`, `verdicts`, and `decisionFallback`. Age/content-preference restrictions
+`incomplete`, `jevScore`, `visualScore`, `verdicts`, `visualVerdicts`, and
+`decisionFallback`. Age/content-preference restrictions
 (`content_gate`), login/paywalls, unresolved cookie consent, verification and error
 pages are reported as blocked tool results. Their text is diagnostic evidence,
 not the requested content; a content-preference restriction does not imply login
@@ -62,9 +63,22 @@ is mandatory. A loading shell that exhausts the wait budget is marked incomplete
 Sampling excludes cookie panels and navigation and brings restriction notices
 into the decision excerpt even after long language menus. Non-semantic articles
 can be recognized by their heading and paragraphs; a stable nested menu alone
-is insufficient. Decisions are rechecked against the current DOM before use.
-The eight-second wait budget includes decision failures, with at most six calls;
-unavailable decisions degrade to conservative mechanical checks.
+is insufficient. Link-dense issue/search/forum lists count as content, and
+`role="progressbar"` elements are treated as loading indicators only when they
+carry loading semantics or the page has no other content evidence — language
+composition and reading-progress bars are not page-loading signals.
+
+When DOM evidence is ambiguous, the reader also sends Jev a screenshot of the
+current 1280×1536 viewport. The visual decision catches large blank areas,
+skeletons and placeholders that text heuristics miss, and can override a false
+`pendingContent` / `contentEvidence` veto. 1280×1536 is the largest tall viewport
+that Jev accepts (max side 1536) while preserving desktop layouts; 1024-wide
+dropped most of MDN's ARIA tree, and 720-wide triggered mobile loading pages on
+Douban/Bilibili.
+Decisions are rechecked against the current DOM before use.
+The eight-second wait budget includes decision failures, with at most six text
+calls plus up to four visual calls; unavailable decisions degrade to conservative
+mechanical checks.
 
 The reader may click one explicit reject-all/necessary-cookies-only control inside
 a recognized cookie panel. It does not confirm an age, change content preferences
