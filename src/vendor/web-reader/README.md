@@ -66,7 +66,9 @@ can be recognized by their heading and paragraphs; a stable nested menu alone
 is insufficient. Link-dense issue/search/forum lists count as content, and
 `role="progressbar"` elements are treated as loading indicators only when they
 carry loading semantics or the page has no other content evidence — language
-composition and reading-progress bars are not page-loading signals.
+composition and reading-progress bars are not page-loading signals. A large
+loaded video player counts as primary content, so a video page does not wait for
+its comment/recommendation skeletons to finish.
 
 When DOM evidence is ambiguous, the reader also sends Jev a screenshot of the
 current 1280×1536 viewport. The visual decision catches large blank areas,

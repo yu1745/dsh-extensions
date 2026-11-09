@@ -15,15 +15,17 @@ const sample = {
   consentText: "",
 };
 
-test("readinessInput carries list evidence as an observation", () => {
+test("readinessInput carries list and video evidence as observations", () => {
   const input = readinessInput("https://example.com", {
     ...sample,
     contentEvidence: false,
     listEvidence: true,
+    mediaEvidence: true,
   });
   assert.equal(input.questions.page_kind.type, "choice");
   assert.equal(input.questions.is_ready.type, "bool");
   assert.ok(input.state.observations.some((line) => line.includes("link-dense list")));
+  assert.ok(input.state.observations.some((line) => line.includes("video player")));
 });
 
 test("visualReadinessInput asks a screenshot-backed readiness question", () => {

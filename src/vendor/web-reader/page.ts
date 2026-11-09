@@ -72,6 +72,12 @@ export const SAMPLE_SCRIPT = `(() => {
   const proseText = prose.map(clean).join(' ')
   const tables = roots.flatMap(root => [...root.querySelectorAll('table')])
   const tableText = tables.map(clean).filter(Boolean).join(' ')
+  // 视频页的主内容就是播放器；它往往比标题/评论骨架更早就绪，不能一直等到整页“稳定”。
+  const videos = roots.flatMap(root => [...root.querySelectorAll('video')])
+  const mediaEvidence = videos.some(video => {
+    const rect = video.getBoundingClientRect()
+    return visible(video) && rect.width >= 320 && rect.height >= 180 && video.readyState >= 2 && Number.isFinite(video.duration) && video.duration > 0
+  })
   // GitHub issue/搜索结果/论坛列表没有 <p>，但每条标题本身就是正文；不能仅因链接比例高就判“无正文”。
   const lists = mainRegions.flatMap(region => [...region.querySelectorAll('ul, ol')])
     .filter(element => !element.closest('nav, header, footer') && !consent.some(panel => panel.contains(element)))
@@ -104,7 +110,7 @@ export const SAMPLE_SCRIPT = `(() => {
   const gateText = article || main || body
   const gate = [${GATE_PATTERNS.map(([, pattern]) => pattern.toString()).join(', ')}].map(pattern => pattern.exec(gateText)).find(Boolean)
   const excerptStart = gate ? Math.max(0, gate.index - 80) : 0
-  return { title: document.title, textLength: text.length, text: (gate ? gateText : text).slice(excerptStart, excerptStart + 600), contentEvidence, listEvidence, pendingContent, consentText: consentText.slice(0, 500) }
+  return { title: document.title, textLength: text.length, text: (gate ? gateText : text).slice(excerptStart, excerptStart + 600), contentEvidence, listEvidence, mediaEvidence, pendingContent, consentText: consentText.slice(0, 500) }
 })()`
 
 /** 等正文就绪后清理同意面板，避免污染 ARIA 覆盖率与返回文本。 */

@@ -4,7 +4,7 @@ import { DISMISS_CONSENT_SCRIPT, SAMPLE_SCRIPT } from './page.ts';
 import { gateSignal, pageExcerpt } from './signals.ts';
 
 export type PageKind = 'content' | 'content_gate' | 'login_wall' | 'bot_check' | 'consent_wall' | 'error_page';
-export type PageSample = { title: string; text: string; textLength: number; contentEvidence: boolean; listEvidence?: boolean; pendingContent: boolean; consentText: string };
+export type PageSample = { title: string; text: string; textLength: number; contentEvidence: boolean; listEvidence?: boolean; mediaEvidence?: boolean; pendingContent: boolean; consentText: string };
 export type LoadVerdict = { pageKind?: PageKind; blocked?: Exclude<PageKind, 'content'>; incomplete: boolean; jevScore?: number; visualScore?: number; fallback?: boolean; verdicts: number; visualVerdicts?: number };
 export interface ReadinessPage {
   evaluate<T>(expression: string): Promise<T>;
@@ -32,6 +32,7 @@ export function readinessInput(url: string, sample: PageSample): ClassifierConte
       observations: [
         sample.contentEvidence ? 'Substantive article/paragraph/table/list text was found after excluding navigation and cookie panels.' : 'No substantive content was found after excluding navigation and cookie panels. A long menu is not an article; a link-dense issue/search/forum list can still be content.',
         sample.listEvidence ? 'The page contains a substantial link-dense list whose items are likely the requested content.' : '',
+        sample.mediaEvidence ? 'A large video player is visible with loaded media; on a video page this is the primary content.' : '',
         sample.pendingContent ? 'A main-content loading indicator is still visible. Progress bars can also be page content such as language composition or reading progress.' : '',
         sample.consentText ? 'A cookie/privacy panel is visible; it is a wall only when the requested content is absent.' : '',
         gate ? `There is a possible ${gate.kind} notice; distinguish a restriction from an article discussing restrictions.` : '',
@@ -71,6 +72,7 @@ export function visualReadinessInput(url: string, sample: PageSample): Classifie
       observations: [
         'The attached PNG is a screenshot of the current page viewport, captured just now.',
         sample.contentEvidence ? 'A DOM text heuristic also found substantive text.' : 'A DOM text heuristic found little paragraph text; the page may still be a link-dense list, gallery or application.',
+        sample.mediaEvidence ? 'A large loaded video player is visible in the DOM; its player/title are sufficient primary content even if comments or recommendations below are still skeletons.' : '',
         sample.pendingContent ? 'A DOM loading-indicator candidate exists. Decide visually whether the main content is still loading; progress bars can also be content such as language composition or reading progress.' : '',
       ].filter(Boolean),
     },
@@ -139,6 +141,7 @@ export async function waitForReadableContent(page: ReadinessPage, url: string, j
   let previous = '';
   let asked = '';
   let askedAt = -1;
+  let textAt = 0;
   let dismissed = false;
   let mechanical = !jev;
   let verdicts = 0;
@@ -166,8 +169,11 @@ export async function waitForReadableContent(page: ReadinessPage, url: string, j
       previous = signature;
       const gate = gateSignal(sample.text) || gateSignal(sample.title);
       const fresh = asked !== signature || stable - askedAt >= 5;
-      if (!mechanical && verdicts < 6 && fresh && (stable >= 1 || gate)) {
+      // 视频页的 DOM 会持续变化（播放进度、推荐流），不能靠签名稳定来节流文本 Jev。
+      const textFresh = stable >= 1 ? fresh : now() - textAt >= 800;
+      if (!mechanical && verdicts < 6 && textFresh && (stable >= 1 || gate || sample.mediaEvidence)) {
         verdicts++;
+        textAt = now();
         asked = signature;
         askedAt = stable;
         const remaining = Math.max(1, deadline - now());
@@ -183,6 +189,9 @@ export async function waitForReadableContent(page: ReadinessPage, url: string, j
         // Decisions may have waited for a network reply while the DOM changed; resample before acting.
         const after = await page.evaluate<PageSample>(SAMPLE_SCRIPT).catch(() => undefined);
         if (!after || JSON.stringify(after) !== signature) {
+          // 视频页的时间轴/推荐流会不停改签名；只要播放器和标题仍是同一主内容，就接受这次文本裁决。
+          if (sample.mediaEvidence && after?.mediaEvidence && after.textLength > 200 && !after.consentText && !gateSignal(after.text) && !gateSignal(after.title)
+            && answer?.kind === 'content' && answer.ready >= TEXT_READY) return result(undefined, true);
           answer = undefined;
           await page.waitForTimeout(100).catch(() => {});
           continue;
@@ -190,7 +199,7 @@ export async function waitForReadableContent(page: ReadinessPage, url: string, j
       }
       if (answer) {
         if (answer.kind !== 'content' && answer.kind !== 'consent_wall' && trusted(answer.confidence, gate?.kind === answer.kind || (!sample.contentEvidence && stable >= 2))) return result(answer.kind);
-        if (answer.kind === 'content' && !sample.pendingContent && answer.ready >= TEXT_READY && trusted(answer.ready, sample.contentEvidence && stable >= 1) && !(gate && !sample.contentEvidence)) return result(undefined, true);
+        if (answer.kind === 'content' && !sample.pendingContent && answer.ready >= TEXT_READY && trusted(answer.ready, (sample.contentEvidence && stable >= 1) || !!sample.mediaEvidence) && !(gate && !sample.contentEvidence)) return result(undefined, true);
       }
       // 机械规则只提示“值得看一眼截图”，不再直接否决 ready。
       // 文本裁决因 DOM 变化被清空时也要保留视觉兜底：加载中的 SPA 常常一边出骨架一边改签名。
