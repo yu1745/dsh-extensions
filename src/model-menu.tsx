@@ -18,7 +18,7 @@ const css = `
 .yu-model-search{display:flex;gap:4px;align-items:center;border-bottom:1px solid var(--dsw-alias-border-l1,#ddd);padding:5px 2px 8px;margin-bottom:4px}.yu-model-search input{width:100%;min-width:0;box-sizing:border-box;font:inherit;color:inherit;background:transparent;border:0;border-radius:4px;padding:6px}.yu-model-search button{padding:6px}
 .yu-model-list{min-height:0;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}.yu-model-row{display:flex;align-items:center;gap:10px;width:100%;min-height:40px;padding:7px 9px;text-align:left}.yu-model-row>span:first-child{flex:1;min-width:0;overflow-wrap:anywhere}.yu-model-row small{display:block;font-size:11px;color:var(--dsw-alias-label-caption);margin-top:2px}.yu-model-row em{font-size:12px;font-style:normal;color:var(--dsw-alias-label-caption);flex:none}.yu-model-row[aria-checked=true],.yu-model-row[aria-expanded=true]{background:var(--dsw-alias-interactive-bg-hover,#8882)}
 .yu-model-status{font-size:12px;padding:9px;color:var(--dsw-alias-label-secondary)}.yu-model-error{font-size:12px;padding:8px;overflow-wrap:anywhere;color:var(--dsw-alias-state-error-primary,#b43c30)}.yu-model-error button{margin-left:8px;text-decoration:underline}.yu-model-foot{border-top:1px solid var(--dsw-alias-border-l1,#ddd);padding-top:4px;margin-top:4px}
-.yu-model-menu--root{width:300px}.yu-model-submenu{z-index:1101;width:360px}.yu-model-submenu--effort{width:240px}
+.yu-model-menu--root{width:300px}.yu-model-submenu{z-index:1101;width:fit-content;min-width:240px;max-width:360px}.yu-model-submenu--effort{max-width:240px}
 `;
 
 type Model = {
@@ -83,10 +83,25 @@ export function ModelMenu({ locked, available, directory, load, select }: any) {
     (m) => matches(`${m.name} ${m.id}`, modelQuery.trim().toLocaleLowerCase()),
   );
   const busy = state.status === "selecting" || Boolean(state.pending);
+  const hoverTimer = useRef<number | undefined>(undefined);
+  const cancelHoverOpen = () => {
+    if (hoverTimer.current !== undefined) {
+      clearTimeout(hoverTimer.current);
+      hoverTimer.current = undefined;
+    }
+  };
   const close = () => {
+    cancelHoverOpen();
     setOpen(false);
     setSubmenu(null);
-    trigger.current?.focus();
+    const active = document.activeElement;
+    if (
+      trigger.current &&
+      (active === trigger.current ||
+        menu.current?.contains(active) ||
+        child.current?.contains(active))
+    )
+      trigger.current?.focus();
   };
   const closeSubmenu = () => {
     setSubmenu(null);
@@ -97,9 +112,22 @@ export function ModelMenu({ locked, available, directory, load, select }: any) {
     button: HTMLButtonElement,
   ) => {
     anchor.current = button;
+    cancelHoverOpen();
     setModelQuery("");
     setSubPosition({ visibility: "hidden" });
     setSubmenu(value);
+  };
+  // Hover opens the submenu only after a short intent delay; clicking is immediate.
+  const hoverOpenSubmenu = (
+    value: { provider: string } | "effort",
+    button: HTMLButtonElement,
+  ) => {
+    cancelHoverOpen();
+    if (submenu === value) return;
+    hoverTimer.current = window.setTimeout(() => {
+      hoverTimer.current = undefined;
+      openSubmenu(value, button);
+    }, 220);
   };
   const choose = async (selection: any) => {
     setError(null);
@@ -128,6 +156,12 @@ export function ModelMenu({ locked, available, directory, load, select }: any) {
     document.addEventListener("pointerdown", outside);
     return () => document.removeEventListener("pointerdown", outside);
   }, [open]);
+  useEffect(
+    () => () => {
+      if (hoverTimer.current !== undefined) clearTimeout(hoverTimer.current);
+    },
+    [],
+  );
   useEffect(() => {
     if (locked || !available) {
       setOpen(false);
@@ -188,15 +222,21 @@ export function ModelMenu({ locked, available, directory, load, select }: any) {
       const maxY = minY + (viewport?.height ?? window.innerHeight) - 24;
       const width = child.current.offsetWidth;
       const rightSpace = maxX - parent.right - 6;
-      const leftSpace = parent.left - minX - 6;
-      // Keep both cards mounted; flip to the left when the right edge is tight.
-      const right = rightSpace >= width || rightSpace >= leftSpace;
+      // Prefer the right side whenever it has usable room, even if the card
+      // must shrink (maxWidth) to hug the viewport edge; flip left only when
+      // the right side is essentially out of space (narrow layout).
+      const usable = Math.min(width, 240);
+      const right = rightSpace >= usable;
       const x = right ? parent.right + 6 : parent.left - width - 6;
       const height = Math.min(child.current.scrollHeight, 460, maxY - minY);
       setSubPosition({
         left: Math.max(minX, Math.min(x, maxX - width)),
         top: Math.max(minY, Math.min(row.top - 6, maxY - height)),
         maxHeight: Math.min(460, maxY - minY),
+        // Keep maxWidth applied on every pass: dropping it after the card
+        // shrinks makes it spring back and oscillate. fit-content CSS keeps
+        // the card at its narrowest content width within this cap.
+        ...(right ? { maxWidth: rightSpace } : {}),
       });
     };
     place();
@@ -355,6 +395,7 @@ export function ModelMenu({ locked, available, directory, load, select }: any) {
         onClick={() => {
           if (open) close();
           else {
+            cancelHoverOpen();
             setSubmenu(null);
             setQuery("");
             setError(null);
@@ -424,6 +465,10 @@ export function ModelMenu({ locked, available, directory, load, select }: any) {
                     aria-haspopup="menu"
                     aria-expanded={provider === g.id}
                     key={g.id}
+                    onMouseEnter={(e) =>
+                      hoverOpenSubmenu({ provider: g.id }, e.currentTarget)
+                    }
+                    onMouseLeave={cancelHoverOpen}
                     onClick={(e) =>
                       openSubmenu({ provider: g.id }, e.currentTarget)
                     }
@@ -453,6 +498,8 @@ export function ModelMenu({ locked, available, directory, load, select }: any) {
                     role="menuitem"
                     aria-haspopup="menu"
                     aria-expanded={submenu === "effort"}
+                    onMouseEnter={(e) => hoverOpenSubmenu("effort", e.currentTarget)}
+                    onMouseLeave={cancelHoverOpen}
                     onClick={(e) => openSubmenu("effort", e.currentTarget)}
                   >
                     <span>推理档位</span>
