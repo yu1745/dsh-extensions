@@ -19,7 +19,7 @@
 #   disabled: true
 - insert:
     # 已取消注册（代码保留，仅不再注册）：yu-openai-windows, yu-openai-window-compaction,
-    # yu-providers, yu-quota, yu-codex-fast, yu-model-fallback。
+    # yu-providers, yu-quota, yu-codex-fast, yu-model-fallback, yu-web-search。
     # - id: yu-openai-windows
     #   name: '@yu1745/dsh-extensions/openai-windows'
     # - id: yu-window-compaction-root
@@ -33,8 +33,8 @@
         root: true
     # - id: yu-providers
     #   name: '@yu1745/dsh-extensions/providers'
-    - id: yu-web-search
-      name: '@yu1745/dsh-extensions/web-search'
+    # - id: yu-web-search
+    #   name: '@yu1745/dsh-extensions/web-search'
     - id: yu-web-reader
       name: '@yu1745/dsh-extensions/web-reader'
     # - id: yu-quota
