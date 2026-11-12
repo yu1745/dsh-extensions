@@ -1,6 +1,5 @@
 import { installFallbackSettings } from "./fallback-panel.js";
 import { installNoWorkspace } from "./no-workspace-client.js";
-import { installModelMenu } from "./model-menu.js";
 import { installOpenaiContextSettings } from "./openai-context-settings.js";
 import { ProviderPanel } from "./provider-panel.js";
 import { providerRemoteInfo } from "./provider-remote.js";
@@ -840,10 +839,13 @@ export const inject = [
   "modelDirectories",
 ];
 export async function apply(ctx: any) {
-  installModelMenu(ctx);
   try {
     await installNoWorkspace(ctx);
     // 以下插件已取消注册，其前端 UI 一并移除（实现代码保留，仅不再挂载）：
+    //   yu-model-menu      -> installModelMenu（模型菜单；它曾以 priority -10 覆盖原生
+    //                         conversation.input.model 单槽，导致 DSH 原生模型菜单及其
+    //                         conversation.input.model.options 子槽（智能体团队开关）被遮蔽，
+    //                         故不再挂载，让原生菜单胜出。src/model-menu.tsx 保留备用。）
     //   yu-web-search      -> installSearchSettings（设置 → 网页搜索 / 搜索后端选择页）
     //   yu-model-fallback  -> installFallbackSettings
     //   yu-openai-windows  -> installOpenaiContextSettings
@@ -851,7 +853,7 @@ export async function apply(ctx: any) {
     //     -> remote 挂载（remoteInfo / providerRemoteInfo / codexAuthRemoteInfo）
     //        以及原 yuQuota 注入区块内的「额度与费用」页、会话计费、Codex Fast 开关与提供方登录面板。
     //   yu-worked-for      -> TurnElapsed ("Worked for {time}s")
-    // 保留与上述插件无关的通用 UI：模型菜单、无工作区。
+    // 保留与上述插件无关的通用 UI：无工作区。
   } catch (error) {
     console.error("[dsh-extensions] client activation failed", error);
     throw error;
