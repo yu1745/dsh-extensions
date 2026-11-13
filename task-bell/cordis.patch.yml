@@ -1,0 +1,4 @@
+- insert:
+    - id: task-bell
+      name: '@local/dsh-task-bell'
+      config: {}

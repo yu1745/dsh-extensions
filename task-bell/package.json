@@ -1,0 +1,11 @@
+{
+  "name": "@local/dsh-task-bell",
+  "version": "1.1.0",
+  "dependencies": { "web-push": "3.6.7" },
+  "private": true,
+  "type": "module",
+  "description": "System notifications for completed tasks in foreground and background",
+  "exports": { ".": "./index.js", "./client": "./client.js", "./locale/*.json": "./locale/*.json", "./icon": "./icon.svg" },
+  "files": ["index.js", "push.js", "client.js", "worker.js", "cordis.patch.yml", "locale", "icon.svg", "README.md"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" }, "client": { "platform": "web", "immediately": true, "inject": ["@deepseek-ai/dsh-client-ui-sidebar", "@deepseek-ai/dsh-client-ui-settings-general", "@deepseek-ai/dsh-client-ui-workspace"] } }
+}
