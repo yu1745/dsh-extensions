@@ -1,7 +1,7 @@
 {
   "name": "@yu1745/dsh-extensions",
   "version": "0.2.2-alpha.1",
-  "description": "Antigravity and CodeBuddy providers, web tools, quota and credits, USD costs and Codex speed modes for DSH",
+  "description": "Antigravity and CodeBuddy providers, web tools and Codex speed modes for DSH",
   "type": "module",
   "license": "MIT",
   "author": "yu1745",
@@ -25,7 +25,6 @@
     "./client": "./lib/client.js",
     "./web-search": "./lib/web-search.js",
     "./web-reader": "./lib/web-reader.js",
-    "./quota": "./lib/quota.js",
     "./codex-fast": "./lib/codex-fast.js",
     "./package.json": "./package.json",
     "./web-tools": "./lib/web-tools.js",
@@ -74,7 +73,7 @@
   },
   "dependencies": {
     "https-proxy-agent": "^7.0.6",
-    "playwright": "1.61.0",
+    "playwright": "^1.61.0",
     "proper-lockfile": "^4.1.2",
     "typebox": "1.1.38",
     "undici": "^8.10.1",

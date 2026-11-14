@@ -9,25 +9,15 @@
  * tree means hidden/hover-only UI (menus, "not interested" buttons, aria-hidden clutter)
  * is naturally excluded, so the output is clean.
  *
- * Cloudflare challenges ("Just a moment" / 安全验证 / Turnstile) are handled by a dedicated
- * branch in ./cloudflare.ts, which uses Jev to decide both whether the page really is a
- * challenge and which element to click, then clicks it with a human-like mouse path.
+ * Cloudflare challenges are intentionally NOT handled; such pages are reported as blocked.
  *
  * Config (env vars):
  *   DSH_WEBREADER_UA       Override User-Agent. UNSET by default — spoofing one that
  *                         contradicts the real platform is itself a bot signal.
  *   DSH_WEBREADER_STEALTH  "1" to inject stealth patches. Off by default for the same
  *                         reason: overriding native navigator values is inconsistent.
- *   DSH_WEBREADER_CF       "off" to disable the Cloudflare challenge branch.
- *   DSH_WEBREADER_CF_ROUNDS     Max click/verify rounds (default 8).
- *   DSH_WEBREADER_CF_TIMEOUT_MS Challenge branch deadline (default 40000).
  *   DSH_WEBREADER_LOCALE   Locale / Accept-Language base (default: zh-CN).
- *   DSH_WEBREADER_HEADED   "1" to show the browser window (headed is the default).
- *   DSH_WEBREADER_HEADLESS "1" to force headless (challenges will usually fail).
- *   DSH_WEBREADER_VISIBLE  "1" to keep the headed window on screen instead of moving it
- *                         offscreen/minimised (the window is never removed from the
- *                         taskbar; see the note on windowArgs).
- *   DSH_WEBREADER_NO_XVFB  "1" to never auto-start Xvfb for headed mode.
+ *   DSH_WEBREADER_GPU      "1" force GPU on, "0" force --disable-gpu (default: auto-detect /dev/dri render node).
  *   DSH_WEBREADER_CDP      Connect to an external browser over CDP instead of launching
  *                         the bundled Chromium, e.g. "http://localhost:9222".
  *   DSH_WEBREADER_MAXURL  Max URL length kept in markdown output (default: 120;
@@ -38,7 +28,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { mkdir, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { accessSync, readdirSync, constants as fsConstants } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { spawn } from "node:child_process";
@@ -52,9 +42,8 @@ import {
   type ScopeCandidate,
   type ScopeDecision,
 } from "./selection.js";
-import { handleCloudflareChallenge, type CfOutcome } from "./cloudflare.js";
-import { displayWorks } from "./display.js";
 import { waitForReadableContent, readinessNote } from "./readiness.ts";
+import { withConsentTools } from "./consent-frames.ts";
 import { CLEAN_CONSENT_SCRIPT } from "./page.ts";
 
 const DEBUG = /^(1|true|yes)$/i.test(process.env.DSH_WEBREADER_DEBUG || "");
@@ -70,14 +59,7 @@ function log(...a: unknown[]) {
 // DSH_WEBREADER_UA only if you genuinely run a browser matching that UA.
 const UA = process.env.DSH_WEBREADER_UA?.trim() || "";
 const LOCALE = process.env.DSH_WEBREADER_LOCALE || "zh-CN";
-// Headed by default: Cloudflare's stronger challenges reject headless browsers. In a
-// headless environment ensureBrowser() starts an Xvfb so "headed" still works.
-// Set DSH_WEBREADER_HEADLESS=1 to force headless (or DSH_WEBREADER_HEADED=0).
-const HEADLESS_ENV = process.env.DSH_WEBREADER_HEADLESS;
-const HEADED =
-  HEADLESS_ENV !== undefined
-    ? !/^(1|true|yes)$/i.test(HEADLESS_ENV)
-    : !/^(0|false|no)$/i.test(process.env.DSH_WEBREADER_HEADED || "");
+// Always headless: no Cloudflare challenge handling, so no real window / Xvfb is needed.
 const CDP = process.env.DSH_WEBREADER_CDP?.trim() || "";
 const MAX_URL = parseInt(process.env.DSH_WEBREADER_MAXURL || "120", 10);
 // Resolve the extension's own directory (works for both local dev installs and
@@ -89,44 +71,31 @@ const LAUNCH_ARGS = [
   "--disable-blink-features=AutomationControlled",
   "--disable-features=IsolateOrigins,site-per-process,AutomationControlled",
   "--disable-infobars",
-  "--disable-gpu",
   "--disable-dev-shm-usage",
   "--no-first-run",
   "--no-default-browser-check",
 ];
 
-// Keep the headed window out of the user's way.
-//
-// This does NOT remove the taskbar / Alt-Tab entry: moving a window offscreen still leaves
-// a real top-level window, and Windows keeps showing it. A truly windowless browser is not
-// an option here — `--headless=new` (with or without a patched UA) is rejected by
-// Cloudflare, so a real window is precisely what makes the challenge pass. Moving it away
-// is the most we can do while keeping that property; verified not to affect the pass rate
-// or the fingerprint (plugins/brands/WebGL are unchanged).
-//
-// Set DSH_WEBREADER_VISIBLE=1 to keep the window on screen (useful when watching a
-// challenge, or debugging).
-const OFFSCREEN_POSITION = "-32000,-32000";
-function windowArgs(): string[] {
-  if (/^(1|true|yes)$/i.test(process.env.DSH_WEBREADER_VISIBLE || "")) return [];
-  if (!HEADED) return []; // headless has no window to move
-  return [`--window-position=${OFFSCREEN_POSITION}`, "--start-minimized"];
+// GPU: decide dynamically instead of hardcoding --disable-gpu. On Linux only use the GPU
+// when a render node is readable/writable by us; otherwise Chromium would waste time
+// probing, so software rendering is requested explicitly. Other platforms: let Chromium
+// choose. DSH_WEBREADER_GPU=1|0 forces it on/off.
+function gpuArgs(): string[] {
+  const force = process.env.DSH_WEBREADER_GPU;
+  if (force !== undefined) return /^(1|true|yes)$/i.test(force) ? [] : ["--disable-gpu"];
+  if (process.platform !== "linux") return [];
+  try {
+    const nodes = readdirSync("/dev/dri").filter((n) => n.startsWith("renderD"));
+    for (const n of nodes) {
+      try { accessSync(`/dev/dri/${n}`, fsConstants.R_OK | fsConstants.W_OK); return []; } catch { /* try next */ }
+    }
+  } catch { /* no /dev/dri */ }
+  return ["--disable-gpu"];
 }
 
 // Playwright's BUNDLED Chromium only. We deliberately do not fall back to a system
 // chrome/msedge: the plugin must work on a machine that has nothing but its own
 // dependencies installed.
-//
-// Version pinning is load-bearing, not cosmetic. Cloudflare rejects Chromium builds that
-// are newer than the current stable channel (Playwright ships dev-channel "Chrome for
-// Testing"). Measured on a live Turnstile challenge, 3/3 passes each:
-//   chromium-1219 (147) / 1223 (148) / 1228 (149)  -> PASS
-//   chromium-1234 (151) / 1243 (153)               -> FAIL 0/3
-// `playwright` is therefore pinned to 1.61.0, which bundles revision 1228.
-const PLAYWRIGHT_PIN_NOTE =
-  "playwright is pinned to 1.61.0 (chromium 1228) because newer bundled Chromium " +
-  "revisions are rejected by Cloudflare challenges";
-
 // ---- browser lifecycle ----------------------------------------------------
 interface AnyBrowser {
   newContext(opts?: unknown): Promise<AnyContext>;
@@ -182,155 +151,6 @@ let autoInstallTriggered = false;
 /** Milliseconds as "1.2s" / "340ms" — the same shape tool-duration.ts prints. */
 function fmtMs(ms: number): string {
   return ms >= 1000 ? `${(ms / 1000).toFixed(2)}s` : `${Math.round(ms)}ms`;
-}
-
-// ---------------------------------------------------------------------------
-// Virtual display
-// ---------------------------------------------------------------------------
-// Cloudflare's stronger challenges only pass for a HEADED browser: a headless
-// Chromium advertises `HeadlessChrome` in its UA and exposes no WebGL, and both
-// are trivially detectable. Verified empirically on a live Turnstile challenge:
-// every headless variant failed, while headed msedge passed on the first click.
-// On a machine without a real X server we therefore start our own Xvfb and point
-// the browser at it, so "headed" works in a headless environment.
-let xvfbProc: { pid?: number; kill(): void } | null = null;
-let virtualDisplay: string | null = null;
-
-/** Ensure some usable display exists for a headed browser; start Xvfb if needed. */
-async function ensureDisplay(): Promise<void> {
-  // Windows and macOS have a native compositor, so a headed browser just works and
-  // there is no Xvfb to run. Bail out before touching any X11 concept.
-  if (process.platform !== "linux") return;
-  if (process.env.DSH_WEBREADER_NO_XVFB === "1") return;
-  // By default, prefer Xvfb to isolate the browser completely from the user desktop,
-  // preventing headed windows from flashing or stealing focus. Set DSH_WEBREADER_VISIBLE=1
-  // to intentionally display on the host desktop.
-  const forceHostDisplay = /^(1|true|yes)$/i.test(process.env.DSH_WEBREADER_VISIBLE || "");
-  if (forceHostDisplay && process.env.DISPLAY && await displayWorks(process.env.DISPLAY)) return;
-
-  if (virtualDisplay) {
-    // Validate the actual connection; a socket may survive a crashed X server.
-    if (await displayWorks(virtualDisplay)) {
-      process.env.DISPLAY = virtualDisplay;
-      return;
-    }
-    log("previous Xvfb", virtualDisplay, "is gone; starting a new one");
-    xvfbProc = null;
-    virtualDisplay = null;
-  }
-
-  // Pick a free display number.
-  for (let n = 90; n < 130; n++) {
-    if (existsSync(`/tmp/.X11-unix/X${n}`)) continue;
-    const display = `:${n}`;
-    const started = await spawnXvfb(display);
-    if (started) {
-      virtualDisplay = display;
-      process.env.DISPLAY = display;
-      return;
-    }
-  }
-  throw new Error(
-    "No usable X display. Install Xvfb and xdpyinfo (Debian/Ubuntu: xvfb x11-utils), " +
-    "or set DSH_WEBREADER_HEADLESS=1 before starting Pi.",
-  );
-}
-
-/**
- * Start Xvfb, resolving false if it cannot be started.
- *
- * `spawn` reports a missing binary (and EACCES) through an async 'error' event, which a
- * surrounding try/catch cannot capture. Without an 'error' listener that becomes an
- * uncaught exception and takes the whole agent process down, so every failure mode is
- * funnelled through this promise instead.
- */
-function spawnXvfb(display: string): Promise<boolean> {
-  return new Promise((resolve, reject) => {
-    installDisplayCleanup();
-    const n = display.slice(1);
-    let child: ReturnType<typeof spawn>;
-    try {
-      child = spawn("Xvfb", [display, "-screen", "0", "1920x1080x24", "-nolisten", "tcp"], {
-        stdio: "ignore",
-        detached: false,
-      });
-    } catch (e) {
-      log("Xvfb is not available:", (e as Error).message);
-      resolve(false);
-      return;
-    }
-
-    let settled = false;
-    const finish = (ok: boolean) => {
-      if (settled) return;
-      settled = true;
-      if (ok) xvfbProc = child as unknown as { pid?: number; kill(): void };
-      resolve(ok);
-    };
-
-    child.on("error", (e) => {
-      log("Xvfb could not be started:", (e as NodeJS.ErrnoException).code || (e as Error).message);
-      finish(false);
-    });
-    child.unref?.();
-
-    // Wait briefly for the X socket to appear.
-    (async () => {
-      for (let i = 0; i < 40; i++) {
-        if (existsSync(`/tmp/.X11-unix/X${n}`) && await displayWorks(display)) {
-          log("started Xvfb on", display, "(pid:", child.pid, ")");
-          finish(true);
-          return;
-        }
-        if (settled) return;
-        await new Promise((r) => setTimeout(r, 50));
-      }
-      log("Xvfb did not create a socket for", display);
-      try {
-        child.kill();
-      } catch {
-        /* ignore */
-      }
-      finish(false);
-    })().catch((error) => {
-      try { child.kill(); } catch { /* ignore */ }
-      settled = true;
-      reject(error);
-    });
-  });
-}
-
-function stopDisplay() {
-  if (!xvfbProc) return;
-  try {
-    xvfbProc.kill();
-  } catch {
-    /* ignore */
-  }
-  xvfbProc = null;
-  virtualDisplay = null;
-}
-
-// The Xvfb is a child of this process, so if we die without a session_shutdown (crash,
-// SIGTERM, hot reload, Ctrl-C) it would be reparented to init and the X socket left
-// behind, slowly leaking daemons until the display-number scan is exhausted. Kill it on
-// the way out, and on the signals that would otherwise skip cleanup.
-let displayCleanupInstalled = false;
-function installDisplayCleanup() {
-  if (displayCleanupInstalled) return;
-  displayCleanupInstalled = true;
-  process.once("exit", () => stopDisplay());
-  for (const sig of ["SIGINT", "SIGTERM", "SIGHUP"] as const) {
-    try {
-      process.once(sig, () => {
-        stopDisplay();
-        // Re-raise with the handler consumed so the default action still applies.
-        process.kill(process.pid, sig);
-      });
-    } catch {
-      /* signal not supported on this platform */
-    }
-  }
 }
 
 function triggerBackgroundChromiumInstall() {
@@ -417,13 +237,11 @@ async function ensureBrowser(): Promise<AnyContext> {
         channel = "cdp";
         launchedContext = launched.contexts()[0] || (await launched.newContext(contextOpts()));
       } else {
-        // A headed browser needs an X display; start Xvfb if the machine has none.
-        if (HEADED) await ensureDisplay();
         try {
-          log("launching bundled chromium, headless:", !HEADED);
+          log("launching bundled chromium, headless: true");
           launched = (await chromium.launch({
-            headless: !HEADED,
-            args: [...LAUNCH_ARGS, ...windowArgs()],
+            headless: true,
+            args: [...LAUNCH_ARGS, ...gpuArgs()],
           })) as AnyBrowser;
           channel = "chromium";
         } catch (e) {
@@ -433,7 +251,7 @@ async function ensureBrowser(): Promise<AnyContext> {
             throw new Error(
               "The bundled Chromium is not installed. Run:\n" +
                 `  cd ${EXT_DIR} && npx playwright install chromium\n` +
-                `(note: ${PLAYWRIGHT_PIN_NOTE})\n\nOriginal error: ${msg}`,
+                `\nOriginal error: ${msg}`,
             );
           }
           throw e;
@@ -503,7 +321,6 @@ async function closeBrowser() {
       /* ignore */
     }
   }
-  stopDisplay();
 }
 
 // ---- per-fetch logic ------------------------------------------------------
@@ -548,7 +365,6 @@ async function fetchPage(p: FetchParams, signal?: AbortSignal, jevService?: JevC
   }
 
   let status: number | null = null;
-  let cfMitigated = false;
   try {
     // Navigate with waitUntil "commit", NOT domcontentloaded.
     //
@@ -583,12 +399,6 @@ async function fetchPage(p: FetchParams, signal?: AbortSignal, jevService?: JevC
     }
     if (resp) {
       status = resp.status();
-      try {
-        const h = resp.headers?.() ?? {};
-        cfMitigated = String(h["cf-mitigated"] || "").toLowerCase().includes("challenge");
-      } catch {
-        /* headers unavailable */
-      }
     }
 
     // 1. Bounded settle wait. The DOM is usually already interactive after commit; these are
@@ -604,44 +414,6 @@ async function fetchPage(p: FetchParams, signal?: AbortSignal, jevService?: JevC
       await page.waitForLoadState("load", { timeout: Math.min(timeout, 1000) }).catch(() => {});
     }
     const afterLoadStateMs = mark();
-
-    // 1b. Cloudflare challenge branch. Jev decides whether this is really a challenge
-    // and, if so, which element to click; we then re-check state each round.
-    let cf: CfOutcome | undefined;
-    if (jevService) {
-      try {
-        cf = await handleCloudflareChallenge({
-          page,
-          context: ctx as unknown as { newCDPSession?(page: unknown): Promise<{ send(m: string, p?: unknown): Promise<unknown> }> },
-          url: p.url,
-          jev: jevService,
-          signal,
-          log,
-          headerHint: cfMitigated,
-        });
-        if (cf.detected) {
-          log(
-            `cloudflare challenge branch: detected=true solved=${cf.solved} ` +
-              `rounds=${cf.rounds}${cf.reason ? ` reason=${cf.reason}` : ""}`,
-          );
-          // Give the page a moment to finish rendering the real content after the challenge.
-          if (cf.solved) await page.waitForLoadState("load", { timeout: 3000 }).catch(() => {});
-        }
-      } catch (e) {
-        log("cloudflare challenge branch threw:", (e as Error).message);
-      }
-    } else {
-      // No Jev: we cannot drive the challenge, but still surface it in the header so a
-      // bare 403 with empty content is not mistaken for an ordinary failure. Previously
-      // this only mutated a local that was never read again.
-      const looksCf =
-        cfMitigated || /just a moment|请稍候|安全验证/i.test(await page.title().catch(() => ""));
-      if (looksCf) {
-        cf = { detected: true, solved: false, rounds: 0, reason: "jev-unconfigured" };
-        log("cloudflare challenge detected but Jev is unavailable; cannot solve it");
-      }
-    }
-    const afterCfMs = mark();
 
     // 2. Custom wait selector if provided
     if (p.waitSelector) await page.waitForSelector(p.waitSelector, { timeout }).catch(() => {});
@@ -709,7 +481,7 @@ async function fetchPage(p: FetchParams, signal?: AbortSignal, jevService?: JevC
     // 4. Extra wait (at least small pause for hydration if not specified)
     const extraWait = p.extraWaitMs ?? 400;
     if (extraWait > 0) await page.waitForTimeout(extraWait).catch(() => {});
-    const loadVerdict = await waitForReadableContent(page, p.url, jevService, signal);
+    const loadVerdict = await waitForReadableContent(withConsentTools(page as any), p.url, jevService, signal);
     // Only the temporary page is changed. Keep explicit selectors and blocked consent evidence intact.
     if (!p.selector && loadVerdict.blocked !== "consent_wall") await page.evaluate(CLEAN_CONSENT_SCRIPT).catch(() => {});
 
@@ -849,8 +621,7 @@ async function fetchPage(p: FetchParams, signal?: AbortSignal, jevService?: JevC
         browserMs: browserMs > 50 ? browserMs : undefined,
         newPageMs: afterNewPageMs - browserMs,
         navigateMs: afterLoadStateMs - afterNewPageMs,
-        cloudflareMs: cf !== undefined ? afterCfMs - afterLoadStateMs : undefined,
-        extractMs: totalMs - afterCfMs,
+        extractMs: totalMs - afterLoadStateMs,
       },
       url: page.url(),
       aria,
@@ -860,7 +631,6 @@ async function fetchPage(p: FetchParams, signal?: AbortSignal, jevService?: JevC
       screenshot: screenshotB64,
       screenshotPath,
       loadVerdict,
-      cloudflare: cf,
     };
   } finally {
     if (signal) signal.removeEventListener("abort", onAbort);
@@ -1293,8 +1063,7 @@ export default function (pi: ExtensionAPI) {
     label: "Web Reader",
     description:
       "Fetch and fully render web page content with a real headless browser (handles " +
-      "JavaScript / single-page apps, dynamic hydration, and bot-blocking WAFs). Cloudflare " +
-      "challenges (Turnstile / 'Just a moment') are detected and solved automatically. Content " +
+      "JavaScript / single-page apps, dynamic hydration, and bot-blocking pages are reported, not bypassed). Content " +
       "is extracted from Playwright's ARIA accessibility snapshot and Jev semantic load verification — so " +
       "hidden/hover-only UI is excluded and the output is clean, readable Markdown. Age/content-preference, login, consent and error pages are classified separately from render readiness; a blocked result is not article content.",
     promptSnippet: "Real-browser web reader; clean Markdown via ARIA snapshot and Jev semantic load verification",
@@ -1409,38 +1178,21 @@ export default function (pi: ExtensionAPI) {
         ? `Jev Score: ${result.loadVerdict?.jevScore !== undefined ? result.loadVerdict.jevScore.toFixed(2) : "-"}${result.loadVerdict?.fallback ? " (fallback)" : ""}` +
           (result.loadVerdict?.visualScore !== undefined ? `  |  Visual Jev: ${result.loadVerdict.visualScore.toFixed(2)}` : "") + "\n"
         : "";
-      const cfGivenUp = result.cloudflare?.reason === "stalled" || result.cloudflare?.reason === "max-rounds";
-      const cfNote = result.cloudflare?.detected
-        ? `Cloudflare: challenge detected — ${result.cloudflare.solved
-            ? `passed after ${result.cloudflare.rounds} click round(s)`
-            : `NOT passed (rounds=${result.cloudflare.rounds}${result.cloudflare.reason ? `, ${result.cloudflare.reason}` : ""})`}` +
-          (cfGivenUp
-            ? " — the widget stopped responding after the click; retrying it cannot change the outcome. This usually means the client IP is rejected outright, not that the browser is detected.\n"
-            : "\n")
-        : "";
       // Mirror the Jev Score line: the per-phase breakdown is what makes a slow read
       // diagnosable (cold launch vs navigation vs a challenge that never resolved).
       const t = result.timing;
       const timingNote = t
         ? `Elapsed: ${fmtMs(t.totalMs)}` +
           (t.browserMs !== undefined ? ` (browser launch ${fmtMs(t.browserMs)})` : "") +
-          (t.cloudflareMs !== undefined && t.cloudflareMs > 50 ? `, challenge ${fmtMs(t.cloudflareMs)}` : "") +
           ` — nav ${fmtMs(t.navigateMs)}, extract ${fmtMs(t.extractMs)}\n`
         : "";
-      // A 403 on a solved challenge is the *challenge* response's status; the content below
-      // is the real page. Say so, otherwise the bare 403 reads as a failure.
-      const statusNote =
-        result.cloudflare?.detected && result.cloudflare.solved && (result.status ?? 0) >= 400
-          ? ` (initial challenge response; page rendered successfully)`
-          : "";
       const header =
         `URL: ${result.url}\n` +
         `Title: ${result.title}\n` +
-        `HTTP: ${result.status ?? "?"}${statusNote}\n` +
+        `HTTP: ${result.status ?? "?"}\n` +
         `Browser: ${activeChannel}${viaCdp ? " (cdp)" : ""}${result.effectiveSelector ? `  [scope: ${result.effectiveSelector}]` : ""}${selectionNote}${truncated ? "  [truncated]" : ""}\n` +
         readinessNote(result.loadVerdict) +
         jevNote +
-        cfNote +
         timingNote +
         (result.screenshotPath ? `Screenshot: ${result.screenshotPath}\n` : "") +
         spanLegend +
@@ -1483,7 +1235,6 @@ export default function (pi: ExtensionAPI) {
           ariaBytes: result.aria?.length ?? 0,
           selection: result.selection,
           screenshotPath: result.screenshotPath,
-          cloudflare: result.cloudflare,
         },
       };
     },
